@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+
+# Generated datasets
+data/generated/
+data/output/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

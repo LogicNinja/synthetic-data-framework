@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synthetic-data-framework.local/schemas/event.schema.json",
+  "title": "Canonical Synthetic Windows Security Event",
+  "description": "Canonical event representation for synthetic and reference Windows security telemetry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "schema_version",
+    "event_source",
+    "event_type",
+    "timestamp",
+    "host_id",
+    "origin",
+    "run_id"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "event_source": {
+      "type": "string",
+      "enum": [
+        "windows_process_creation",
+        "powershell_classic",
+        "other"
+      ]
+    },
+    "event_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "host_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "origin": {
+      "type": "string",
+      "enum": ["synthetic", "reference"]
+    },
+    "process": {
+      "$ref": "#/$defs/process"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "ground_truth_labels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "detection_results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/detection_result"
+      }
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "extensions": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "process_id": {
+          "type": ["string", "integer"]
+        },
+        "process_guid": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "original_file_name": {
+          "type": "string"
+        },
+        "command_line": {
+          "type": "string"
+        },
+        "parent_process_id": {
+          "type": ["string", "integer"]
+        },
+        "parent_process_guid": {
+          "type": "string"
+        },
+        "parent_image": {
+          "type": "string"
+        },
+        "parent_command_line": {
+          "type": "string"
+        },
+        "user": {
+          "type": "string"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_event_id": {
+          "type": ["string", "integer"]
+        },
+        "channel": {
+          "type": "string"
+        },
+        "event_code": {
+          "type": ["string", "integer"]
+        },
+        "raw_event": {
+          "type": ["object", "string", "null"]
+        },
+        "source_fields": {
+          "type": "object"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "type": "string",
+          "enum": ["synthetic", "reference"]
+        },
+        "scenario_id": {
+          "type": "string"
+        },
+        "action_id": {
+          "type": "string"
+        },
+        "generator_version": {
+          "type": "string"
+        },
+        "parent_event_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "detection_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rule_id",
+        "matched",
+        "evaluator_version"
+      ],
+      "properties": {
+        "rule_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "matched": {
+          "type": "boolean"
+        },
+        "evaluator_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
