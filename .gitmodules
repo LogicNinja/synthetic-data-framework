@@ -1,0 +1,6 @@
+[submodule "knowledge/attack/attack-stix-data"]
+	path = knowledge/attack/attack-stix-data
+	url = https://github.com/mitre-attack/attack-stix-data.git
+[submodule "knowledge/sigma_rules/sigma"]
+	path = knowledge/sigma_rules/sigma
+	url = https://github.com/SigmaHQ/sigma.git
