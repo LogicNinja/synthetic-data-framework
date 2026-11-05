@@ -59,6 +59,8 @@ class SimulatorActions:
     ):
         """Create and store a canonical process-creation event."""
         parent_event_ids = []
+        parent_image = None
+        parent_command_line = None
 
         if process.parent_process_id is not None:
             parent_event_id = self._process_event_ids.get(
@@ -69,6 +71,9 @@ class SimulatorActions:
                     "Parent process has no corresponding creation event."
                 )
             parent_event_ids.append(parent_event_id)
+            parent = self.state.get_process(process.parent_process_id)
+            parent_image = parent.image
+            parent_command_line = parent.command_line
 
         user = self.state.get_user(process.user_id)
 
@@ -80,6 +85,8 @@ class SimulatorActions:
             command_line=process.command_line,
             parent_process_id=process.parent_process_id,
             parent_process_guid=process.parent_process_guid,
+            parent_image=parent_image,
+            parent_command_line=parent_command_line,
             user=user.username,
         )
 

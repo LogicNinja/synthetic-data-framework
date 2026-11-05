@@ -1,0 +1,28 @@
+{
+  "scenario_id": "S2_WMI_POWERSHELL",
+  "description": "WMI provider host spawns a PowerShell child process.",
+  "hostname": "WS-001",
+  "username": "alice",
+  "label": "malicious",
+  "steps": [
+    {
+      "action": "start_process",
+      "process_id": "1000",
+      "image": "C:\\Windows\\System32\\WmiPrvSE.exe",
+      "command_line": "C:\\Windows\\System32\\WmiPrvSE.exe",
+      "original_file_name": "WmiPrvSE.exe",
+      "timestamp": "2026-01-01T10:00:00+00:00",
+      "technique_labels": ["T1047"]
+    },
+    {
+      "action": "spawn_child",
+      "parent_process_id": "1000",
+      "process_id": "1001",
+      "image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "command_line": "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command Get-Process",
+      "original_file_name": "PowerShell.EXE",
+      "timestamp": "2026-01-01T10:00:01+00:00",
+      "technique_labels": ["T1059.001"]
+    }
+  ]
+}
