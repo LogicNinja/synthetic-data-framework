@@ -1,4 +1,3 @@
-
 """End-to-end pipeline.
 
 spec -> simulator events -> action trace provenance validation
@@ -51,6 +50,7 @@ class PipelineReport:
     rules_loaded: int
     rules_failed_to_load: int = 0
     unsupported_evaluations: int = 0
+    unsupported_reasons: dict[str, int] = field(default_factory=dict)
     schema_errors: dict[str, list[str]] = field(default_factory=dict)
     provenance_errors: list[str] = field(default_factory=list)
     detections: dict[str, list[str]] = field(default_factory=dict)
@@ -92,11 +92,13 @@ def load_rules(rule_dir: str | Path) -> tuple[list[dict[str, Any]], int]:
 def attach_detections(
     event: CanonicalEvent,
     rules: list[dict[str, Any]],
+    unsupported_reasons: dict[str, int] | None = None,
 ) -> int:
-    """Attach every matching rule to the event.
+    """Attach matching rules and optionally aggregate unsupported reasons.
 
-    Only matches are stored, so the JSONL stays small. Rules the evaluator
-    cannot handle are skipped; the number skipped is returned.
+    Only matches are stored, so the JSONL stays small. Unsupported rules
+    are skipped; the number skipped is returned. If a reason-count mapping
+    is supplied, each SigmaEvaluationError is counted by its message.
     """
     event_dict = event.to_dict()
     unsupported = 0
@@ -104,8 +106,15 @@ def attach_detections(
     for rule in rules:
         try:
             result = SigmaEvaluator.evaluate(rule, event_dict)
-        except SigmaEvaluationError:
+        except SigmaEvaluationError as error:
             unsupported += 1
+
+            if unsupported_reasons is not None:
+                reason = str(error)
+                unsupported_reasons[reason] = (
+                    unsupported_reasons.get(reason, 0) + 1
+                )
+
             continue
 
         if result["matched"]:
@@ -160,7 +169,11 @@ def run_pipeline(
 
     # Evaluate detection rules and attach matching results.
     for event in events:
-        report.unsupported_evaluations += attach_detections(event, rules)
+        report.unsupported_evaluations += attach_detections(
+            event,
+            rules,
+            report.unsupported_reasons,
+        )
 
         matched = [d.rule_id for d in event.detection_results if d.matched]
         if matched:

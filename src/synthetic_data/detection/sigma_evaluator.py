@@ -2,7 +2,7 @@
 import re
 from typing import Any
 
-EVALUATOR_VERSION = "0.1.3"
+EVALUATOR_VERSION = "0.2.0"
 
 SUPPORTED_MODIFIERS = {
     "contains",
@@ -11,8 +11,14 @@ SUPPORTED_MODIFIERS = {
     "re",
     "all",
     "exists",
+    "windash",
 }
 
+# At most one of these may appear on a field.
+MATCH_MODIFIERS = {"contains", "startswith", "endswith", "re"}
+
+# Characters that Windows command lines treat as interchangeable flag prefixes.
+_DASH_CHARACTERS = re.compile(r"(?<!\S)[-/\u2013\u2014\u2015](?=[A-Za-z])")
 
 class SigmaEvaluationError(ValueError):
     """Raised when a Sigma rule uses unsupported or invalid syntax."""
@@ -23,6 +29,54 @@ class SigmaEvaluator:
     def _normalize_field_name(name: str) -> str:
         """Normalize Sigma and canonical event field names."""
         return re.sub(r"[^a-z0-9]", "", name.casefold())
+
+    @staticmethod
+    def _normalize_dashes(text: str) -> str:
+        """Map every Windows dash variant (- / en/em dash, bar) to '-'.
+
+        Applying this to both the event value and the rule value is
+        equivalent to expanding the rule value into all its dash variants.
+        It can match slightly more than a variant-by-variant expansion
+        when a dash inside a word differs, which is rare in practice.
+        """
+        return _DASH_CHARACTERS.sub("-", text)
+
+    @staticmethod
+    def _validate_modifiers(modifiers: list[str]) -> None:
+        """Reject unsupported or contradictory modifier chains."""
+        unsupported = [
+            modifier
+            for modifier in modifiers
+            if modifier not in SUPPORTED_MODIFIERS
+        ]
+        if unsupported:
+            raise SigmaEvaluationError(
+                f"Unsupported Sigma modifier: {unsupported[0]}"
+            )
+
+        duplicates = sorted(
+            {modifier for modifier in modifiers if modifiers.count(modifier) > 1}
+        )
+        if duplicates:
+            raise SigmaEvaluationError(
+                f"Duplicate Sigma modifier: {duplicates[0]}"
+            )
+
+        if "exists" in modifiers and len(modifiers) > 1:
+            raise SigmaEvaluationError(
+                "The 'exists' modifier cannot be combined with other modifiers."
+            )
+
+        match_types = [m for m in modifiers if m in MATCH_MODIFIERS]
+        if len(match_types) > 1:
+            raise SigmaEvaluationError(
+                f"Conflicting match modifiers: {', '.join(match_types)}"
+            )
+
+        if "re" in modifiers and "windash" in modifiers:
+            raise SigmaEvaluationError(
+                "The 'windash' modifier cannot be combined with 're'."
+            )
 
     @classmethod
     def _flatten_event(cls, event: Any) -> dict[str, Any]:
@@ -98,6 +152,10 @@ class SigmaEvaluator:
         actual_text = str(actual)
         expected_text = str(expected)
 
+        if "windash" in modifiers:
+            actual_text = cls._normalize_dashes(actual_text)
+            expected_text = cls._normalize_dashes(expected_text)
+
         if "contains" in modifiers:
             return expected_text.casefold() in actual_text.casefold()
 
@@ -140,20 +198,7 @@ class SigmaEvaluator:
             field_name = parts[0]
             modifiers = [part.casefold() for part in parts[1:]]
 
-            unsupported = [
-                modifier
-                for modifier in modifiers
-                if modifier not in SUPPORTED_MODIFIERS
-            ]
-            if unsupported:
-                raise SigmaEvaluationError(
-                    f"Unsupported Sigma modifier: {unsupported[0]}"
-                )
-
-            if len(modifiers) > 1:
-                raise SigmaEvaluationError(
-                    "Multiple modifiers on one field are not supported."
-                )
+            cls._validate_modifiers(modifiers)
 
             normalized_field = cls._normalize_field_name(field_name)
             actual = event_fields.get(normalized_field)

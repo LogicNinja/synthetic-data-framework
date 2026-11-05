@@ -43,7 +43,7 @@ UNSUPPORTED_RULE = {
     "id": "test-unsupported",
     "logsource": {"category": "process_creation", "product": "windows"},
     "detection": {
-        "selection": {"CommandLine|contains|all": ["a", "b"]},
+        "selection": {"CommandLine|base64offset": ["a", "b"]},
         "condition": "selection",
     },
 }
@@ -91,7 +91,9 @@ def test_s2_pipeline_end_to_end(generated_dir):
 
     # The unsupported rule is skipped once per event, not fatal.
     assert report.unsupported_evaluations == 2
-
+    assert report.unsupported_reasons == {
+        "Unsupported Sigma modifier: base64offset": 2
+    }
     assert (generated_dir / "s2_wmi_powershell_test-run.jsonl").exists()
 
 
