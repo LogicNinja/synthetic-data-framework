@@ -39,13 +39,23 @@ class SimulatedProcess:
     is_running: bool = True
 
 
+@dataclass
+class SimulatedFile:
+    """A file that exists in the simulated Windows environment."""
+
+    file_path: str
+    host_id: str
+    size: int = 0
+
+
 class SimulatorState:
-    """Tracks hosts, users, and processes in a simulated environment."""
+    """Tracks hosts, users, processes, and files in a simulated environment."""
 
     def __init__(self) -> None:
         self.hosts: dict[str, SimulatedHost] = {}
         self.users: dict[str, SimulatedUser] = {}
         self.processes: dict[str, SimulatedProcess] = {}
+        self.files: dict[tuple[str, str], SimulatedFile] = {}
 
     def create_host(
         self,
@@ -233,3 +243,76 @@ class SimulatorState:
             for process in self.processes.values()
             if process.parent_process_id == process_id
         ]
+
+    def get_file(
+        self,
+        host_id: str,
+        file_path: str,
+    ) -> SimulatedFile:
+        """Return a file or raise an error if it does not exist."""
+        self.get_host(host_id)
+
+        key = (host_id, file_path)
+
+        try:
+            return self.files[key]
+        except KeyError as exc:
+            raise SimulatorStateError(
+                f"Unknown file on host {host_id}: {file_path}"
+            ) from exc
+
+    def create_file(
+        self,
+        host_id: str,
+        file_path: str,
+        size: int = 0,
+    ) -> SimulatedFile:
+        """Create a file on an existing host."""
+        self.get_host(host_id)
+
+        if not file_path or not file_path.strip():
+            raise SimulatorStateError("File path cannot be empty.")
+
+        if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+            raise SimulatorStateError(
+                "File size must be a non-negative integer."
+            )
+
+        key = (host_id, file_path)
+
+        if key in self.files:
+            raise SimulatorStateError(
+                f"File already exists on host {host_id}: {file_path}"
+            )
+
+        simulated_file = SimulatedFile(
+            file_path=file_path,
+            host_id=host_id,
+            size=size,
+        )
+
+        self.files[key] = simulated_file
+        return simulated_file
+
+    def modify_file(
+        self,
+        host_id: str,
+        file_path: str,
+        size: Optional[int] = None,
+    ) -> SimulatedFile:
+        """Modify an existing file's size."""
+        simulated_file = self.get_file(host_id, file_path)
+
+        if size is not None:
+            if (
+                not isinstance(size, int)
+                or isinstance(size, bool)
+                or size < 0
+            ):
+                raise SimulatorStateError(
+                    "File size must be a non-negative integer."
+                )
+
+            simulated_file.size = size
+
+        return simulated_file

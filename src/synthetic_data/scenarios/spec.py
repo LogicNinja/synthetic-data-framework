@@ -32,19 +32,43 @@ _PROCESS_FIELDS = {
     "original_file_name",
     "timestamp",
 }
+
 STEP_REQUIRED = {
     "start_process": _PROCESS_FIELDS,
     "spawn_child": _PROCESS_FIELDS | {"parent_process_id"},
+    "create_file": {"file_path", "timestamp"},
+    "modify_file": {"file_path", "timestamp"},
 }
+
 STEP_OPTIONAL = {"technique_labels"}
+
+STEP_OPTIONAL_BY_ACTION = {
+    "start_process": set(),
+    "spawn_child": set(),
+    "create_file": {"size"},
+    "modify_file": {"size"},
+}
 
 
 class ScenarioSpecError(ValueError):
     """Raised when a scenario spec is malformed or inconsistent."""
 
 
+def _validate_file_size(step: dict[str, Any], where: str) -> None:
+    """Validate an optional file size."""
+    if "size" not in step:
+        return
+
+    size = step["size"]
+
+    if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+        raise ScenarioSpecError(
+            f"{where}: size must be a non-negative integer."
+        )
+
+
 def validate_spec(spec: dict[str, Any]) -> None:
-    """Raise ScenarioSpecError if the spec is malformed or inconsistent."""
+    """Raise ScenarioSpecError if a spec is malformed or inconsistent."""
     if not isinstance(spec, dict):
         raise ScenarioSpecError("Spec must be a mapping.")
 
@@ -68,6 +92,8 @@ def validate_spec(spec: dict[str, Any]) -> None:
         raise ScenarioSpecError("steps must be a non-empty list.")
 
     process_times: dict[str, datetime] = {}
+    created_files: set[str] = set()
+
     previous_time: datetime | None = None
     any_technique = False
 
@@ -85,6 +111,7 @@ def validate_spec(spec: dict[str, Any]) -> None:
             )
 
         required = STEP_REQUIRED[action]
+        action_optional = STEP_OPTIONAL_BY_ACTION[action]
 
         missing = required - step.keys()
         if missing:
@@ -92,12 +119,19 @@ def validate_spec(spec: dict[str, Any]) -> None:
                 f"{where}: missing fields {sorted(missing)}."
             )
 
-        unknown = step.keys() - required - STEP_OPTIONAL - {"action"}
+        unknown = (
+            step.keys()
+            - required
+            - STEP_OPTIONAL
+            - action_optional
+            - {"action"}
+        )
         if unknown:
             raise ScenarioSpecError(
                 f"{where}: unknown fields {sorted(unknown)}."
             )
 
+        # Validate required string fields, except file size which is numeric.
         for name in required:
             if not isinstance(step[name], str) or not step[name].strip():
                 raise ScenarioSpecError(
@@ -111,13 +145,15 @@ def validate_spec(spec: dict[str, Any]) -> None:
             raise ScenarioSpecError(
                 f"{where}: technique_labels must be a list of strings."
             )
+
         any_technique = any_technique or bool(labels)
 
         try:
             timestamp = datetime.fromisoformat(step["timestamp"])
         except ValueError:
             raise ScenarioSpecError(
-                f"{where}: timestamp is not ISO 8601: {step['timestamp']!r}."
+                f"{where}: timestamp is not ISO 8601: "
+                f"{step['timestamp']!r}."
             ) from None
 
         try:
@@ -131,21 +167,42 @@ def validate_spec(spec: dict[str, Any]) -> None:
                 "a UTC offset."
             ) from None
 
-        process_id = step["process_id"]
-        if process_id in process_times:
-            raise ScenarioSpecError(
-                f"{where}: duplicate process_id {process_id!r}."
-            )
+        if action in {"start_process", "spawn_child"}:
+            process_id = step["process_id"]
 
-        if action == "spawn_child":
-            parent = step["parent_process_id"]
-            if parent not in process_times:
+            if process_id in process_times:
                 raise ScenarioSpecError(
-                    f"{where}: parent_process_id {parent!r} was not "
-                    "started by an earlier step."
+                    f"{where}: duplicate process_id {process_id!r}."
                 )
 
-        process_times[process_id] = timestamp
+            if action == "spawn_child":
+                parent = step["parent_process_id"]
+                if parent not in process_times:
+                    raise ScenarioSpecError(
+                        f"{where}: parent_process_id {parent!r} was not "
+                        "started by an earlier step."
+                    )
+
+            process_times[process_id] = timestamp
+
+        elif action in {"create_file", "modify_file"}:
+            file_path = step["file_path"]
+
+            if action == "create_file":
+                if file_path in created_files:
+                    raise ScenarioSpecError(
+                        f"{where}: file already created: {file_path!r}."
+                    )
+                created_files.add(file_path)
+
+            elif file_path not in created_files:
+                raise ScenarioSpecError(
+                    f"{where}: file_path {file_path!r} was not created "
+                    "by an earlier step."
+                )
+
+            _validate_file_size(step, where)
+
         previous_time = timestamp
 
     if spec["label"] == "benign" and any_technique:
@@ -166,17 +223,36 @@ def spec_to_scenario(spec: dict[str, Any]) -> ScenarioFunction:
 
     def scenario(context: ScenarioContext) -> None:
         for step in steps:
-            kwargs = {key: value for key, value in step.items() if key != "action"}
+            kwargs = {
+                key: value
+                for key, value in step.items()
+                if key != "action"
+            }
             kwargs.setdefault("technique_labels", [])
 
-            if step["action"] == "start_process":
+            action = step["action"]
+
+            if action == "start_process":
                 context.actions.start_process(
                     host_id=context.host.host_id,
                     user_id=context.user.user_id,
                     **kwargs,
                 )
-            else:
+
+            elif action == "spawn_child":
                 context.actions.spawn_child(**kwargs)
+
+            elif action == "create_file":
+                context.actions.create_file(
+                    host_id=context.host.host_id,
+                    **kwargs,
+                )
+
+            elif action == "modify_file":
+                context.actions.modify_file(
+                    host_id=context.host.host_id,
+                    **kwargs,
+                )
 
     return scenario
 

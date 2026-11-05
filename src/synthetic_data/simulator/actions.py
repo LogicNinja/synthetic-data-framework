@@ -1,4 +1,3 @@
-
 """Simulator actions that update state and emit canonical telemetry."""
 
 from datetime import datetime, timezone
@@ -118,6 +117,47 @@ class SimulatorActions:
         self._process_event_ids[process.process_id] = event.event_id
         return event
 
+    def _emit_file_event(
+        self,
+        *,
+        host_id: str,
+        file_path: str,
+        file_size: int,
+        activity: str,
+        action_id: str,
+        timestamp: str,
+        technique_labels: Optional[list[str]] = None,
+    ):
+        """Create and store a canonical file-activity event."""
+        provenance = ProvenanceInfo(
+            origin="synthetic",
+            scenario_id=self.scenario_id,
+            action_id=action_id,
+            generator_version=GENERATOR_VERSION,
+            parent_event_ids=[],
+        )
+
+        event = EventFactory.create_event(
+            event_source="other",
+            event_type=f"file_{activity}",
+            timestamp=timestamp,
+            host_id=host_id,
+            origin="synthetic",
+            run_id=self.run_id,
+            provenance=provenance,
+            ground_truth_labels=technique_labels or [],
+            extensions={
+                "file_activity": {
+                    "activity": activity,
+                    "file_path": file_path,
+                    "file_size": file_size,
+                }
+            },
+        )
+
+        self.events.append(event)
+        return event
+
     def start_process(
         self,
         *,
@@ -224,3 +264,95 @@ class SimulatorActions:
                 "original_file_name": original_file_name,
             },
         )
+
+    def create_file(
+        self,
+        *,
+        host_id: str,
+        file_path: str,
+        size: int = 0,
+        timestamp: Optional[str] = None,
+        technique_labels: Optional[list[str]] = None,
+    ):
+        """Create a simulated file and emit a file-creation event."""
+        action_id = self._next_action_id()
+        action_timestamp = self._timestamp(timestamp)
+
+        simulated_file = self.state.create_file(
+            host_id=host_id,
+            file_path=file_path,
+            size=size,
+        )
+
+        event = self._emit_file_event(
+            host_id=host_id,
+            file_path=simulated_file.file_path,
+            file_size=simulated_file.size,
+            activity="creation",
+            action_id=action_id,
+            timestamp=action_timestamp,
+            technique_labels=technique_labels,
+        )
+
+        self.trace.append(
+            ActionTraceEntry(
+                action_id=action_id,
+                action_type="create_file",
+                parameters={
+                    "host_id": host_id,
+                    "file_path": file_path,
+                    "size": size,
+                },
+                event_ids=[event.event_id],
+                timestamp=action_timestamp,
+                technique_labels=list(technique_labels or []),
+            )
+        )
+
+        return event
+
+    def modify_file(
+        self,
+        *,
+        host_id: str,
+        file_path: str,
+        size: Optional[int] = None,
+        timestamp: Optional[str] = None,
+        technique_labels: Optional[list[str]] = None,
+    ):
+        """Modify a simulated file and emit a file-modification event."""
+        action_id = self._next_action_id()
+        action_timestamp = self._timestamp(timestamp)
+
+        simulated_file = self.state.modify_file(
+            host_id=host_id,
+            file_path=file_path,
+            size=size,
+        )
+
+        event = self._emit_file_event(
+            host_id=host_id,
+            file_path=simulated_file.file_path,
+            file_size=simulated_file.size,
+            activity="modification",
+            action_id=action_id,
+            timestamp=action_timestamp,
+            technique_labels=technique_labels,
+        )
+
+        self.trace.append(
+            ActionTraceEntry(
+                action_id=action_id,
+                action_type="modify_file",
+                parameters={
+                    "host_id": host_id,
+                    "file_path": file_path,
+                    "size": size,
+                },
+                event_ids=[event.event_id],
+                timestamp=action_timestamp,
+                technique_labels=list(technique_labels or []),
+            )
+        )
+
+        return event

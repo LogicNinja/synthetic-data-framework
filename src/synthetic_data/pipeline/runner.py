@@ -2,6 +2,7 @@
 
 spec -> simulator events -> action trace provenance validation
      -> Sigma detections -> schema validation
+     -> domain realism validation
      -> JSONL dataset -> reload and compare.
 
 Run it from the repo root with:
@@ -29,6 +30,8 @@ from synthetic_data.schemas.event_validator import validate_event
 from synthetic_data.schemas.provenance_validator import validate_provenance
 from synthetic_data.simulator.scenario_runner import ScenarioRunner
 from synthetic_data.storage.dataset_store import DatasetStore
+from synthetic_data.validation.domain_realism import validate_domain_realism
+
 
 # Standard SigmaHQ layout. Change it if your submodule is laid out differently.
 DEFAULT_RULE_DIR = (
@@ -53,6 +56,8 @@ class PipelineReport:
     unsupported_reasons: dict[str, int] = field(default_factory=dict)
     schema_errors: dict[str, list[str]] = field(default_factory=dict)
     provenance_errors: list[str] = field(default_factory=list)
+    domain_realism_errors: list[str] = field(default_factory=list)
+    domain_realism_warnings: list[str] = field(default_factory=list)
     detections: dict[str, list[str]] = field(default_factory=dict)
     saved_path: str | None = None
     roundtrip_ok: bool = False
@@ -62,6 +67,7 @@ class PipelineReport:
         return (
             not self.schema_errors
             and not self.provenance_errors
+            and not self.domain_realism_errors
             and self.roundtrip_ok
             and self.rules_failed_to_load == 0
         )
@@ -179,14 +185,26 @@ def run_pipeline(
         if matched:
             report.detections[event.event_id] = matched
 
-    # Validate event structure against the canonical schema.
+    # Layer 2: validate event structure against the canonical schema.
     for event in events:
         errors = validate_event(event.to_dict())
+
         if errors:
             report.schema_errors[event.event_id] = errors
 
-    # Never save a dataset that fails provenance or schema validation.
-    if report.schema_errors or report.provenance_errors:
+    # Layer 3: check domain-aware consistency of generated telemetry.
+    domain_report = validate_domain_realism(
+        [event.to_dict() for event in events]
+    )
+    report.domain_realism_errors = domain_report.errors
+    report.domain_realism_warnings = domain_report.warnings
+
+    # Never save a dataset that fails L1, L2, or L3 validation.
+    if (
+        report.schema_errors
+        or report.provenance_errors
+        or report.domain_realism_errors
+    ):
         return report
 
     filename = filename or f"{spec['scenario_id'].lower()}_{run_id}.jsonl"

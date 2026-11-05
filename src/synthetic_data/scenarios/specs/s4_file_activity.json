@@ -1,0 +1,22 @@
+
+{
+  "scenario_id": "S4",
+  "hostname": "WIN-SYNTH-04",
+  "username": "analyst",
+  "label": "benign",
+  "description": "Create and modify a simulated file.",
+  "steps": [
+    {
+      "action": "create_file",
+      "file_path": "C:\\Users\\analyst\\Documents\\report.txt",
+      "size": 128,
+      "timestamp": "2026-01-01T10:00:00+00:00"
+    },
+    {
+      "action": "modify_file",
+      "file_path": "C:\\Users\\analyst\\Documents\\report.txt",
+      "size": 256,
+      "timestamp": "2026-01-01T10:00:05+00:00"
+    }
+  ]
+}
