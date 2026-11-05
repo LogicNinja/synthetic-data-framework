@@ -1,0 +1,28 @@
+{
+  "scenario_id": "S3_CMD_POWERSHELL",
+  "description": "Command Prompt launches PowerShell.",
+  "hostname": "WS-002",
+  "username": "bob",
+  "label": "malicious",
+  "steps": [
+    {
+      "action": "start_process",
+      "process_id": "2000",
+      "image": "C:\\Windows\\System32\\cmd.exe",
+      "command_line": "cmd.exe",
+      "original_file_name": "Cmd.Exe",
+      "timestamp": "2026-01-01T10:05:00+00:00",
+      "technique_labels": ["T1059.003"]
+    },
+    {
+      "action": "spawn_child",
+      "parent_process_id": "2000",
+      "process_id": "2001",
+      "image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "command_line": "powershell.exe -NoProfile -EncodedCommand SQBFAFgA",
+      "original_file_name": "PowerShell.EXE",
+      "timestamp": "2026-01-01T10:05:01+00:00",
+      "technique_labels": ["T1059.001"]
+    }
+  ]
+}
