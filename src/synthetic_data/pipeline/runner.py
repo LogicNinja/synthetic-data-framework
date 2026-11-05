@@ -35,6 +35,7 @@ from synthetic_data.storage.dataset_store import DatasetStore
 DEFAULT_RULE_DIR = (
     KNOWLEDGE_DIR
     / "sigma_rules"
+    / "sigma"
     / "rules"
     / "windows"
     / "process_creation"
