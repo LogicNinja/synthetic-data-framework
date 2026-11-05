@@ -1,3 +1,4 @@
+
 """Simulator actions that update state and emit canonical telemetry."""
 
 from datetime import datetime, timezone
@@ -5,6 +6,7 @@ from typing import Optional
 
 from synthetic_data.factory.event_factory import EventFactory
 from synthetic_data.models.event import ProcessInfo, ProvenanceInfo
+from synthetic_data.simulator.action_trace import ActionTraceEntry
 from synthetic_data.simulator.state import SimulatorState, SimulatedProcess
 
 
@@ -34,6 +36,7 @@ class SimulatorActions:
         self.scenario_id = scenario_id
         self.run_id = run_id
         self.events = []
+        self.trace: list[ActionTraceEntry] = []
         self._action_counter = 0
         self._process_event_ids: dict[str, str] = {}
 
@@ -70,6 +73,7 @@ class SimulatorActions:
                 raise SimulatorActionError(
                     "Parent process has no corresponding creation event."
                 )
+
             parent_event_ids.append(parent_event_id)
             parent = self.state.get_process(process.parent_process_id)
             parent_image = parent.image
@@ -126,6 +130,8 @@ class SimulatorActions:
         original_file_name: Optional[str] = None,
         timestamp: Optional[str] = None,
         technique_labels: Optional[list[str]] = None,
+        _trace_action_type: str = "start_process",
+        _trace_parameters: Optional[dict] = None,
     ):
         """Start a process and emit its process-creation event."""
         # Validate parent event linkage before changing simulator state.
@@ -138,6 +144,7 @@ class SimulatorActions:
             )
 
         action_id = self._next_action_id()
+        action_timestamp = self._timestamp(timestamp)
 
         process = self.state.add_process(
             host_id=host_id,
@@ -149,12 +156,35 @@ class SimulatorActions:
             original_file_name=original_file_name,
         )
 
-        return self._emit_process_event(
+        event = self._emit_process_event(
             process,
             action_id=action_id,
-            timestamp=self._timestamp(timestamp),
+            timestamp=action_timestamp,
             technique_labels=technique_labels,
         )
+
+        parameters = _trace_parameters or {
+            "host_id": host_id,
+            "user_id": user_id,
+            "image": image,
+            "command_line": command_line,
+            "parent_process_id": parent_process_id,
+            "process_id": process.process_id,
+            "original_file_name": original_file_name,
+        }
+
+        self.trace.append(
+            ActionTraceEntry(
+                action_id=action_id,
+                action_type=_trace_action_type,
+                parameters=parameters,
+                event_ids=[event.event_id],
+                timestamp=action_timestamp,
+                technique_labels=list(technique_labels or []),
+            )
+        )
+
+        return event
 
     def spawn_child(
         self,
@@ -185,4 +215,12 @@ class SimulatorActions:
             original_file_name=original_file_name,
             timestamp=timestamp,
             technique_labels=technique_labels,
+            _trace_action_type="spawn_child",
+            _trace_parameters={
+                "parent_process_id": parent_process_id,
+                "image": image,
+                "command_line": command_line,
+                "process_id": process_id,
+                "original_file_name": original_file_name,
+            },
         )

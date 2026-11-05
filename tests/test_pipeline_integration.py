@@ -201,3 +201,41 @@ def test_failed_rule_load_makes_pipeline_not_ok(generated_dir):
 def test_unhashable_label_is_rejected():
     with pytest.raises(ScenarioSpecError):
         validate_spec(_spec_with(lambda spec: spec.update(label=[])))
+
+
+def test_pipeline_reports_valid_provenance(generated_dir):
+    report = run_pipeline(
+        load_builtin_spec("s2_wmi_powershell"),
+        RULES,
+        run_id="test-valid-provenance",
+    )
+
+    assert report.provenance_errors == []
+    assert report.ok
+    assert report.saved_path is not None
+
+
+def test_pipeline_blocks_save_when_provenance_fails(
+    generated_dir,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "synthetic_data.pipeline.runner.validate_provenance",
+        lambda events, trace: ["Simulated provenance failure."],
+    )
+
+    report = run_pipeline(
+        load_builtin_spec("s2_wmi_powershell"),
+        RULES,
+        run_id="test-invalid-provenance",
+    )
+
+    assert report.provenance_errors == ["Simulated provenance failure."]
+    assert report.saved_path is None
+    assert not report.roundtrip_ok
+    assert not report.ok
+
+    expected_path = (
+        generated_dir / "s2_wmi_powershell_test-invalid-provenance.jsonl"
+    )
+    assert not expected_path.exists()

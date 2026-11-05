@@ -172,3 +172,78 @@ def test_invalid_process_action_does_not_emit_event(action_environment):
         )
 
     assert actions.events == []
+def test_start_process_records_action_trace(action_environment):
+    _, host, user, actions = action_environment
+
+    event = actions.start_process(
+        host_id=host.host_id,
+        user_id=user.user_id,
+        image="notepad.exe",
+        command_line="notepad.exe",
+        process_id="proc-1",
+        timestamp="2026-01-01T10:00:00Z",
+    )
+
+    assert len(actions.trace) == 1
+
+    trace_entry = actions.trace[0]
+
+    assert trace_entry.action_id == "action-0001"
+    assert trace_entry.action_type == "start_process"
+    assert trace_entry.parameters["host_id"] == host.host_id
+    assert trace_entry.parameters["user_id"] == user.user_id
+    assert trace_entry.parameters["image"] == "notepad.exe"
+    assert trace_entry.parameters["process_id"] == "proc-1"
+    assert trace_entry.event_ids == [event.event_id]
+    assert trace_entry.timestamp == "2026-01-01T10:00:00Z"
+
+
+def test_spawn_child_records_spawn_child_trace(action_environment):
+    _, host, user, actions = action_environment
+
+    parent_event = actions.start_process(
+        host_id=host.host_id,
+        user_id=user.user_id,
+        image="WmiPrvSE.exe",
+        command_line="WmiPrvSE.exe",
+        process_id="parent-1",
+        timestamp="2026-01-01T10:00:00Z",
+    )
+
+    child_event = actions.spawn_child(
+        parent_process_id="parent-1",
+        image="powershell.exe",
+        command_line="powershell.exe",
+        process_id="child-1",
+        timestamp="2026-01-01T10:00:01Z",
+    )
+
+    assert len(actions.trace) == 2
+
+    parent_trace = actions.trace[0]
+    child_trace = actions.trace[1]
+
+    assert parent_trace.action_type == "start_process"
+    assert parent_trace.event_ids == [parent_event.event_id]
+
+    assert child_trace.action_id == "action-0002"
+    assert child_trace.action_type == "spawn_child"
+    assert child_trace.parameters["parent_process_id"] == "parent-1"
+    assert child_trace.parameters["image"] == "powershell.exe"
+    assert child_trace.parameters["process_id"] == "child-1"
+    assert child_trace.event_ids == [child_event.event_id]
+    assert child_trace.timestamp == "2026-01-01T10:00:01Z"
+
+
+def test_failed_action_does_not_record_trace(action_environment):
+    _, _, user, actions = action_environment
+
+    with pytest.raises(ValueError):
+        actions.start_process(
+            host_id="missing-host",
+            user_id=user.user_id,
+            image="bad.exe",
+            command_line="bad.exe",
+        )
+
+    assert actions.trace == []

@@ -1,8 +1,10 @@
+
 """Reusable runner for synthetic attack scenarios."""
 
 from dataclasses import dataclass
 from typing import Callable
 
+from synthetic_data.simulator.action_trace import ActionTraceEntry
 from synthetic_data.simulator.actions import SimulatorActions
 from synthetic_data.simulator.state import (
     SimulatorState,
@@ -20,6 +22,7 @@ class ScenarioResult:
     host: SimulatedHost
     user: SimulatedUser
     events: list
+    trace: list[ActionTraceEntry]
 
 
 @dataclass
@@ -47,7 +50,7 @@ class ScenarioRunner:
         username: str,
         scenario: ScenarioFunction,
     ) -> ScenarioResult:
-        """Execute a scenario and return its generated events."""
+        """Execute a scenario and return its events and action trace."""
 
         state = SimulatorState()
         host = state.create_host(hostname=hostname)
@@ -77,4 +80,5 @@ class ScenarioRunner:
             host=host,
             user=user,
             events=actions.events.copy(),
+            trace=actions.trace.copy(),
         )

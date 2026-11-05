@@ -1,6 +1,8 @@
+
 """End-to-end pipeline.
 
-spec -> simulator events -> Sigma detections -> schema validation
+spec -> simulator events -> action trace provenance validation
+     -> Sigma detections -> schema validation
      -> JSONL dataset -> reload and compare.
 
 Run it from the repo root with:
@@ -25,6 +27,7 @@ from synthetic_data.detection.sigma_loader import SigmaRuleLoader
 from synthetic_data.models.event import CanonicalEvent, DetectionResult
 from synthetic_data.scenarios.spec import load_builtin_spec, spec_to_scenario
 from synthetic_data.schemas.event_validator import validate_event
+from synthetic_data.schemas.provenance_validator import validate_provenance
 from synthetic_data.simulator.scenario_runner import ScenarioRunner
 from synthetic_data.storage.dataset_store import DatasetStore
 
@@ -48,6 +51,7 @@ class PipelineReport:
     rules_failed_to_load: int = 0
     unsupported_evaluations: int = 0
     schema_errors: dict[str, list[str]] = field(default_factory=dict)
+    provenance_errors: list[str] = field(default_factory=list)
     detections: dict[str, list[str]] = field(default_factory=dict)
     saved_path: str | None = None
     roundtrip_ok: bool = False
@@ -56,6 +60,7 @@ class PipelineReport:
     def ok(self) -> bool:
         return (
             not self.schema_errors
+            and not self.provenance_errors
             and self.roundtrip_ok
             and self.rules_failed_to_load == 0
         )
@@ -145,6 +150,14 @@ def run_pipeline(
         rules_failed_to_load=rules_failed_to_load,
     )
 
+    # Layer 1: check that every event's provenance and labels agree
+    # with the simulator's recorded action trace.
+    report.provenance_errors = validate_provenance(
+        events,
+        result.trace,
+    )
+
+    # Evaluate detection rules and attach matching results.
     for event in events:
         report.unsupported_evaluations += attach_detections(event, rules)
 
@@ -152,13 +165,15 @@ def run_pipeline(
         if matched:
             report.detections[event.event_id] = matched
 
+    # Validate event structure against the canonical schema.
     for event in events:
         errors = validate_event(event.to_dict())
         if errors:
             report.schema_errors[event.event_id] = errors
 
-    if report.schema_errors:
-        return report  # never save an invalid dataset
+    # Never save a dataset that fails provenance or schema validation.
+    if report.schema_errors or report.provenance_errors:
+        return report
 
     filename = filename or f"{spec['scenario_id'].lower()}_{run_id}.jsonl"
     path = DatasetStore.save(events, dataset_type, filename)
