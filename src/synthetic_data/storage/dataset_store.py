@@ -1,4 +1,7 @@
+"""Manage canonical datasets across project data locations."""
 
+import os
+import tempfile
 from pathlib import Path
 from typing import Iterable
 
@@ -51,9 +54,48 @@ class DatasetStore:
         dataset_type: str,
         filename: str,
     ) -> Path:
-        """Save events to a dataset location and return its path."""
+        """Save events atomically, rejecting duplicate or conflicting IDs."""
+        event_list = list(events)
+        events_by_id: dict[str, dict] = {}
+
+        # Validate event IDs and detect duplicates before writing anything.
+        for event in event_list:
+            event_id = event.event_id
+            event_content = event.to_dict()
+
+            if event_id in events_by_id:
+                if events_by_id[event_id] == event_content:
+                    raise ValueError(
+                        f"Duplicate event_id {event_id!r}: "
+                        "identical event content."
+                    )
+
+                raise ValueError(
+                    f"Conflicting event_id {event_id!r}: "
+                    "event content differs."
+                )
+
+            events_by_id[event_id] = event_content
+
         path = cls.get_dataset_path(dataset_type, filename)
-        write_jsonl(events, path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        file_descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=path.parent,
+        )
+        os.close(file_descriptor)
+
+        temporary_path = Path(temporary_name)
+
+        try:
+            write_jsonl(event_list, temporary_path)
+            os.replace(temporary_path, path)
+        except BaseException:
+            temporary_path.unlink(missing_ok=True)
+            raise
+
         return path
 
     @classmethod
