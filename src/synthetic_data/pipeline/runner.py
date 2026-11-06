@@ -138,6 +138,39 @@ def attach_detections(
     return unsupported
 
 
+def _build_dataset_metadata(
+    spec: dict[str, Any],
+    run_id: str,
+    rules_loaded: int,
+    unsupported_evaluations: int,
+) -> dict[str, Any]:
+    """Build descriptive metadata from the declarative scenario spec."""
+    technique_labels = sorted(
+        {
+            label
+            for step in spec["steps"]
+            for label in step.get("technique_labels", [])
+        }
+    )
+
+    metadata: dict[str, Any] = {
+        "generation_method": "simulator",
+        "scenario_id": spec["scenario_id"],
+        "label": spec["label"],
+        "run_id": run_id,
+        "hostname": spec["hostname"],
+        "username": spec["username"],
+        "technique_labels": technique_labels,
+        "sigma_rules_loaded": rules_loaded,
+        "unsupported_sigma_evaluations": unsupported_evaluations,
+    }
+
+    if "description" in spec:
+        metadata["description"] = spec["description"]
+
+    return metadata
+
+
 def run_pipeline(
     spec: dict[str, Any],
     rules: list[dict[str, Any]],
@@ -208,7 +241,18 @@ def run_pipeline(
         return report
 
     filename = filename or f"{spec['scenario_id'].lower()}_{run_id}.jsonl"
-    path = DatasetStore.save(events, dataset_type, filename)
+    metadata = _build_dataset_metadata(
+        spec,
+        run_id,
+        len(rules),
+        report.unsupported_evaluations,
+    )
+    path = DatasetStore.save(
+        events,
+        dataset_type,
+        filename,
+        metadata=metadata,
+    )
     report.saved_path = str(path)
 
     reloaded = DatasetStore.load(dataset_type, filename)

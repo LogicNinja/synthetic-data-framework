@@ -241,3 +241,35 @@ def test_pipeline_blocks_save_when_provenance_fails(
         generated_dir / "s2_wmi_powershell_test-invalid-provenance.jsonl"
     )
     assert not expected_path.exists()
+def test_pipeline_saves_scenario_metadata(generated_dir):
+    spec = load_builtin_spec("s2_wmi_powershell")
+
+    report = run_pipeline(
+        spec,
+        RULES,
+        run_id="test-metadata",
+    )
+
+    assert report.ok
+    assert report.saved_path is not None
+
+    metadata = DatasetStore.load_metadata(
+        "generated",
+        "s2_wmi_powershell_test-metadata.jsonl",
+    )
+    metadata = metadata["metadata"]
+    assert metadata["generation_method"] == "simulator"
+    assert metadata["scenario_id"] == "S2_WMI_POWERSHELL"
+    assert metadata["label"] == "malicious"
+    assert metadata["run_id"] == "test-metadata"
+    assert metadata["hostname"] == spec["hostname"]
+    assert metadata["username"] == spec["username"]
+    assert metadata["technique_labels"] == sorted(
+        {
+            label
+            for step in spec["steps"]
+            for label in step.get("technique_labels", [])
+        }
+    )
+    assert metadata["sigma_rules_loaded"] == len(RULES)
+    assert metadata["unsupported_sigma_evaluations"] == 2
