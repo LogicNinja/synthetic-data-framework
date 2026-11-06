@@ -3,10 +3,14 @@
 spec -> simulator events -> action trace provenance validation
      -> Sigma detections -> schema validation
      -> domain realism validation
-     -> JSONL dataset -> reload and compare.
+     -> JSONL dataset -> reload and compare
+     -> optional reference-based statistical realism evaluation.
 
 Run it from the repo root with:
     python -m synthetic_data.pipeline.runner s2_wmi_powershell
+
+To include Layer 4:
+    python -m synthetic_data.pipeline.runner s2_wmi_powershell --reference data/reference/windows_events.jsonl
 """
 
 from __future__ import annotations
@@ -31,9 +35,11 @@ from synthetic_data.schemas.provenance_validator import validate_provenance
 from synthetic_data.simulator.scenario_runner import ScenarioRunner
 from synthetic_data.storage.dataset_store import DatasetStore
 from synthetic_data.validation.domain_realism import validate_domain_realism
+from synthetic_data.validation.reference_realism import (
+    evaluate_reference_realism,
+)
 
 
-# Standard SigmaHQ layout. Change it if your submodule is laid out differently.
 DEFAULT_RULE_DIR = (
     KNOWLEDGE_DIR
     / "sigma_rules"
@@ -58,12 +64,22 @@ class PipelineReport:
     provenance_errors: list[str] = field(default_factory=list)
     domain_realism_errors: list[str] = field(default_factory=list)
     domain_realism_warnings: list[str] = field(default_factory=list)
+    reference_realism_status: str = "not_requested"
+    reference_event_count: int = 0
+    reference_similarity_score: float | None = None
+    reference_feature_distances: dict[str, float] = field(default_factory=dict)
+    reference_realism_errors: list[str] = field(default_factory=list)
     detections: dict[str, list[str]] = field(default_factory=dict)
     saved_path: str | None = None
     roundtrip_ok: bool = False
 
     @property
     def ok(self) -> bool:
+        """L1-L3 and dataset round-trip must pass.
+
+        Reference realism is informational until a suitable baseline is
+        available and the project defines an acceptance threshold.
+        """
         return (
             not self.schema_errors
             and not self.provenance_errors
@@ -100,12 +116,7 @@ def attach_detections(
     rules: list[dict[str, Any]],
     unsupported_reasons: dict[str, int] | None = None,
 ) -> int:
-    """Attach matching rules and optionally aggregate unsupported reasons.
-
-    Only matches are stored, so the JSONL stays small. Unsupported rules
-    are skipped; the number skipped is returned. If a reason-count mapping
-    is supplied, each SigmaEvaluationError is counted by its message.
-    """
+    """Attach matching rules and optionally aggregate unsupported reasons."""
     event_dict = event.to_dict()
     unsupported = 0
 
@@ -179,8 +190,14 @@ def run_pipeline(
     rules_failed_to_load: int = 0,
     dataset_type: str = "generated",
     filename: str | None = None,
+    reference_path: str | Path | None = None,
 ) -> PipelineReport:
-    """Run one spec through the full pipeline and report what happened."""
+    """Run one spec through the pipeline and report what happened.
+
+    Layer 4 is optional. If reference_path is omitted, the report records
+    that no reference comparison was requested. If supplied, the reference
+    dataset is evaluated after the generated dataset is saved and reloaded.
+    """
     result = ScenarioRunner().run(
         scenario_id=spec["scenario_id"],
         run_id=run_id,
@@ -199,8 +216,7 @@ def run_pipeline(
         rules_failed_to_load=rules_failed_to_load,
     )
 
-    # Layer 1: check that every event's provenance and labels agree
-    # with the simulator's recorded action trace.
+    # Layer 1: validate provenance against the simulator action trace.
     report.provenance_errors = validate_provenance(
         events,
         result.trace,
@@ -225,14 +241,14 @@ def run_pipeline(
         if errors:
             report.schema_errors[event.event_id] = errors
 
-    # Layer 3: check domain-aware consistency of generated telemetry.
+    # Layer 3: domain-aware consistency checks.
     domain_report = validate_domain_realism(
         [event.to_dict() for event in events]
     )
     report.domain_realism_errors = domain_report.errors
     report.domain_realism_warnings = domain_report.warnings
 
-    # Never save a dataset that fails L1, L2, or L3 validation.
+    # Do not save datasets that fail L1, L2, or L3.
     if (
         report.schema_errors
         or report.provenance_errors
@@ -247,6 +263,7 @@ def run_pipeline(
         len(rules),
         report.unsupported_evaluations,
     )
+
     path = DatasetStore.save(
         events,
         dataset_type,
@@ -260,6 +277,23 @@ def run_pipeline(
         [e.to_dict() for e in events] == [e.to_dict() for e in reloaded]
     )
 
+    # Layer 4: optional comparison against reference telemetry.
+    if reference_path is not None:
+        reference_report = evaluate_reference_realism(
+            path,
+            reference_path,
+        )
+
+        report.reference_realism_status = reference_report.status
+        report.reference_event_count = reference_report.reference_event_count
+        report.reference_similarity_score = (
+            reference_report.similarity_score
+        )
+        report.reference_feature_distances = (
+            reference_report.feature_distances
+        )
+        report.reference_realism_errors = reference_report.errors
+
     return report
 
 
@@ -272,6 +306,11 @@ def main(argv: list[str] | None = None) -> int:
         help="name of a spec in scenarios/specs (without .json)",
     )
     parser.add_argument("--rules", default=str(DEFAULT_RULE_DIR))
+    parser.add_argument(
+        "--reference",
+        default=None,
+        help="optional reference telemetry JSONL file for Layer 4",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -282,16 +321,21 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     run_id = datetime.now(timezone.utc).strftime("run-%Y%m%dT%H%M%SZ")
+
     report = run_pipeline(
         load_builtin_spec(args.spec),
         rules,
         run_id=run_id,
         rules_failed_to_load=failed,
+        reference_path=args.reference,
     )
 
     print(json.dumps(asdict(report), indent=2, default=str))
     print(f"rules failed to load: {failed}")
+    print(f"Layer 4 status: {report.reference_realism_status}")
+    print(f"Layer 4 similarity: {report.reference_similarity_score}")
     print(f"OK: {report.ok}")
+
     return 0 if report.ok else 1
 
 

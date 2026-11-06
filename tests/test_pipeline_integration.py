@@ -273,3 +273,63 @@ def test_pipeline_saves_scenario_metadata(generated_dir):
     )
     assert metadata["sigma_rules_loaded"] == len(RULES)
     assert metadata["unsupported_sigma_evaluations"] == 2
+
+def test_pipeline_l4_not_requested_by_default(generated_dir):
+    report = run_pipeline(
+        load_builtin_spec("s2_wmi_powershell"),
+        RULES,
+        run_id="test-l4-not-requested",
+    )
+
+    assert report.ok
+    assert report.reference_realism_status == "not_requested"
+    assert report.reference_similarity_score is None
+
+
+def test_pipeline_l4_evaluates_reference_dataset(
+    generated_dir,
+    tmp_path,
+):
+    reference_path = tmp_path / "reference.jsonl"
+    reference_path.write_text(
+        (
+            '{"event_type":"process_creation",'
+            '"process":{"image":"powershell.exe","user":"alice"}}\n'
+            '{"event_type":"process_creation",'
+            '"process":{"image":"WmiPrvSE.exe","user":"alice"}}\n'
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_pipeline(
+        load_builtin_spec("s2_wmi_powershell"),
+        RULES,
+        run_id="test-l4-evaluated",
+        reference_path=reference_path,
+    )
+
+    assert report.ok
+    assert report.reference_realism_status == "evaluated"
+    assert report.reference_event_count == 2
+    assert report.reference_similarity_score is not None
+    assert 0.0 <= report.reference_similarity_score <= 1.0
+    assert report.reference_feature_distances
+
+
+def test_pipeline_l4_missing_reference_is_nonfatal(
+    generated_dir,
+    tmp_path,
+):
+    missing_reference = tmp_path / "missing-reference.jsonl"
+
+    report = run_pipeline(
+        load_builtin_spec("s2_wmi_powershell"),
+        RULES,
+        run_id="test-l4-missing",
+        reference_path=missing_reference,
+    )
+
+    assert report.ok
+    assert report.reference_realism_status == "reference_unavailable"
+    assert report.reference_similarity_score is None
+    assert report.reference_realism_errors
