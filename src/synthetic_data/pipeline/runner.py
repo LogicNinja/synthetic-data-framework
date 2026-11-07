@@ -36,6 +36,7 @@ from synthetic_data.simulator.scenario_runner import ScenarioRunner
 from synthetic_data.storage.dataset_store import DatasetStore
 from synthetic_data.validation.domain_realism import validate_domain_realism
 from synthetic_data.validation.reference_realism import (
+    DEFAULT_MINIMUM_SAMPLE_SIZE,
     evaluate_reference_realism,
 )
 
@@ -68,6 +69,8 @@ class PipelineReport:
     reference_event_count: int = 0
     reference_similarity_score: float | None = None
     reference_feature_distances: dict[str, float] = field(default_factory=dict)
+    reference_sample_adequacy: str = "not_assessable"
+    reference_minimum_sample_size: int = DEFAULT_MINIMUM_SAMPLE_SIZE
     reference_realism_errors: list[str] = field(default_factory=list)
     detections: dict[str, list[str]] = field(default_factory=dict)
     saved_path: str | None = None
@@ -292,6 +295,12 @@ def run_pipeline(
         report.reference_feature_distances = (
             reference_report.feature_distances
         )
+        report.reference_sample_adequacy = (
+            reference_report.sample_adequacy
+        )
+        report.reference_minimum_sample_size = (
+            reference_report.minimum_sample_size
+        )
         report.reference_realism_errors = reference_report.errors
 
     return report
@@ -334,6 +343,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"rules failed to load: {failed}")
     print(f"Layer 4 status: {report.reference_realism_status}")
     print(f"Layer 4 similarity: {report.reference_similarity_score}")
+    print(f"Layer 4 sample adequacy: {report.reference_sample_adequacy}")
+    print(
+        "Layer 4 minimum sample size: "
+        f"{report.reference_minimum_sample_size}"
+    )
     print(f"OK: {report.ok}")
 
     return 0 if report.ok else 1

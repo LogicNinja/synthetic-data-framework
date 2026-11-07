@@ -33,7 +33,7 @@ def test_normalize_sysmon_process_creation():
     )
 
     assert event.event_source == "windows_process_creation"
-    assert event.event_type == "process_create"
+    assert event.event_type == "process_creation"
     assert event.process.process_id == "1234"
     assert event.process.parent_image.endswith("explorer.exe")
     event.validate()

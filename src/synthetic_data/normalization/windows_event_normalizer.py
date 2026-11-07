@@ -1,4 +1,3 @@
-
 from typing import Any
 
 from synthetic_data.factory.event_factory import EventFactory
@@ -68,7 +67,7 @@ class WindowsEventNormalizer:
 
         if str(event_id) == "1":
             event_source = "windows_process_creation"
-            event_type = "process_create"
+            event_type = "process_creation"
 
             process = ProcessInfo(
                 process_id=cls._get_value(

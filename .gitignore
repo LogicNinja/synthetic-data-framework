@@ -10,9 +10,20 @@ venv/
 .env
 .env.*
 
-# Generated datasets
+# Generated outputs
 data/generated/
 data/output/
+data/reports/
+
+# Reference datasets and downloaded archives
+data/reference/**
+
+# Keep curated reference baselines
+!data/reference/splunk_t1047_process_creation.jsonl
+!data/reference/splunk_t1047_process_creation.jsonl.meta.json
+
+# Large external attack-data collection
+knowledge/attack_data/
 
 # IDE / OS
 .vscode/

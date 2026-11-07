@@ -1,8 +1,12 @@
+
 """Reference-based statistical comparison for synthetic Windows telemetry.
 
-Layer 4 compares synthetic events with a reference dataset. It measures
-distribution similarity; it does not prove that synthetic events are real.
-A score is only produced when both datasets contain usable events.
+Layer 4 compares synthetic process-creation events with reference
+process-creation telemetry. It measures distribution similarity; it does
+not prove that synthetic events are real.
+
+The report also indicates whether the available sample sizes are large
+enough for the similarity score to be interpreted with reasonable caution.
 """
 
 from __future__ import annotations
@@ -15,6 +19,8 @@ from typing import Any, Iterable
 
 
 MISSING_VALUE = "<missing>"
+PROCESS_CREATION_EVENT_TYPE = "process_creation"
+DEFAULT_MINIMUM_SAMPLE_SIZE = 30
 
 
 @dataclass
@@ -27,6 +33,8 @@ class ReferenceRealismReport:
     feature_distances: dict[str, float] = field(default_factory=dict)
     similarity_score: float | None = None
     errors: list[str] = field(default_factory=list)
+    sample_adequacy: str = "not_assessable"
+    minimum_sample_size: int = DEFAULT_MINIMUM_SAMPLE_SIZE
 
     @property
     def ok(self) -> bool:
@@ -38,26 +46,26 @@ class ReferenceRealismReport:
         return asdict(self)
 
 
+def _process_creation_events(
+    events: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return only canonical process-creation events."""
+    return [
+        event
+        for event in events
+        if event.get("event_type") == PROCESS_CREATION_EVENT_TYPE
+    ]
+
+
 def _feature_value(event: dict[str, Any], feature: str) -> str:
     """Extract a comparable value for a selected feature."""
-    if feature == "event_type":
-        value = event.get("event_type")
-
-    elif feature == "process_image":
+    if feature == "process_image":
         process = event.get("process")
         value = process.get("image") if isinstance(process, dict) else None
 
         if isinstance(value, str):
-            # Normalize Windows and POSIX path separators and compare
-            # executable names rather than machine-specific full paths.
+            # Compare executable names rather than machine-specific paths.
             value = value.replace("\\", "/").rsplit("/", 1)[-1].lower()
-
-    elif feature == "process_user":
-        process = event.get("process")
-        value = process.get("user") if isinstance(process, dict) else None
-
-        if isinstance(value, str):
-            value = value.strip().lower()
 
     else:
         raise ValueError(f"Unsupported feature: {feature}")
@@ -68,7 +76,10 @@ def _feature_value(event: dict[str, Any], feature: str) -> str:
     return str(value).strip().lower()
 
 
-def _distribution(events: list[dict[str, Any]], feature: str) -> Counter[str]:
+def _distribution(
+    events: list[dict[str, Any]],
+    feature: str,
+) -> Counter[str]:
     """Build a normalized feature-value counter."""
     return Counter(_feature_value(event, feature) for event in events)
 
@@ -77,7 +88,7 @@ def _total_variation_distance(
     synthetic: Counter[str],
     reference: Counter[str],
 ) -> float:
-    """Calculate total variation distance between two empirical distributions.
+    """Calculate total variation distance between empirical distributions.
 
     Returns a value between 0 and 1:
       0 means identical distributions.
@@ -102,25 +113,57 @@ def _total_variation_distance(
     return distance / 2
 
 
+def _get_sample_adequacy(
+    synthetic_count: int,
+    reference_count: int,
+    minimum_sample_size: int,
+) -> str:
+    """Classify sample size without changing the similarity calculation."""
+    if (
+        synthetic_count < minimum_sample_size
+        or reference_count < minimum_sample_size
+    ):
+        return "low_sample"
+
+    return "adequate"
+
+
 def compare_reference_realism(
     synthetic_events: Iterable[dict[str, Any]],
     reference_events: Iterable[dict[str, Any]],
+    *,
+    minimum_sample_size: int = DEFAULT_MINIMUM_SAMPLE_SIZE,
 ) -> ReferenceRealismReport:
-    """Compare selected event distributions against reference telemetry.
+    """Compare process-image distributions against reference telemetry.
 
     The overall similarity score is 1 minus the mean feature distance.
     It is a statistical similarity indicator, not a probability or proof
     of authenticity.
+
+    Sample adequacy is reported separately. A low sample size does not
+    invalidate the descriptive score, but it limits its interpretation.
+
+    Non-process-creation events are excluded from the comparison.
     """
-    synthetic = list(synthetic_events)
-    reference = list(reference_events)
+    if (
+        not isinstance(minimum_sample_size, int)
+        or isinstance(minimum_sample_size, bool)
+        or minimum_sample_size < 1
+    ):
+        raise ValueError("minimum_sample_size must be a positive integer.")
+
+    synthetic = _process_creation_events(synthetic_events)
+    reference = _process_creation_events(reference_events)
 
     if not reference:
         return ReferenceRealismReport(
             status="reference_unavailable",
             synthetic_event_count=len(synthetic),
             reference_event_count=0,
-            errors=["Reference dataset is empty or unavailable."],
+            errors=[
+                "Reference dataset contains no process_creation events."
+            ],
+            minimum_sample_size=minimum_sample_size,
         )
 
     if not synthetic:
@@ -128,14 +171,13 @@ def compare_reference_realism(
             status="synthetic_unavailable",
             synthetic_event_count=0,
             reference_event_count=len(reference),
-            errors=["Synthetic dataset is empty."],
+            errors=[
+                "Synthetic dataset contains no process_creation events."
+            ],
+            minimum_sample_size=minimum_sample_size,
         )
 
-    features = (
-        "event_type",
-        "process_image",
-        "process_user",
-    )
+    features = ("process_image",)
 
     distances: dict[str, float] = {}
 
@@ -156,6 +198,12 @@ def compare_reference_realism(
         reference_event_count=len(reference),
         feature_distances=distances,
         similarity_score=1.0 - mean_distance,
+        sample_adequacy=_get_sample_adequacy(
+            len(synthetic),
+            len(reference),
+            minimum_sample_size,
+        ),
+        minimum_sample_size=minimum_sample_size,
     )
 
 
@@ -188,8 +236,17 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 def evaluate_reference_realism(
     synthetic_path: str | Path,
     reference_path: str | Path,
+    *,
+    minimum_sample_size: int = DEFAULT_MINIMUM_SAMPLE_SIZE,
 ) -> ReferenceRealismReport:
-    """Load two JSONL datasets and compare their event distributions."""
+    """Load two JSONL datasets and compare their process distributions."""
+    if (
+        not isinstance(minimum_sample_size, int)
+        or isinstance(minimum_sample_size, bool)
+        or minimum_sample_size < 1
+    ):
+        raise ValueError("minimum_sample_size must be a positive integer.")
+
     synthetic_file = Path(synthetic_path)
     reference_file = Path(reference_path)
 
@@ -198,7 +255,10 @@ def evaluate_reference_realism(
 
         if synthetic_file.is_file():
             try:
-                synthetic_count = len(_load_jsonl(synthetic_file))
+                synthetic_events = _load_jsonl(synthetic_file)
+                synthetic_count = len(
+                    _process_creation_events(synthetic_events)
+                )
             except (OSError, ValueError):
                 pass
 
@@ -207,6 +267,7 @@ def evaluate_reference_realism(
             synthetic_event_count=synthetic_count,
             reference_event_count=0,
             errors=[f"Reference file does not exist: {reference_file}"],
+            minimum_sample_size=minimum_sample_size,
         )
 
     if not synthetic_file.is_file():
@@ -215,6 +276,7 @@ def evaluate_reference_realism(
             synthetic_event_count=0,
             reference_event_count=0,
             errors=[f"Synthetic file does not exist: {synthetic_file}"],
+            minimum_sample_size=minimum_sample_size,
         )
 
     try:
@@ -226,6 +288,11 @@ def evaluate_reference_realism(
             synthetic_event_count=0,
             reference_event_count=0,
             errors=[str(exc)],
+            minimum_sample_size=minimum_sample_size,
         )
 
-    return compare_reference_realism(synthetic, reference)
+    return compare_reference_realism(
+        synthetic,
+        reference,
+        minimum_sample_size=minimum_sample_size,
+    )
