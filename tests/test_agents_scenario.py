@@ -85,6 +85,25 @@ def test_scenario_agent_enforces_caller_label_mismatch():
     assert result.spec["label"] == "malicious"
 
 
+def test_scenario_agent_supplies_planner_labels_when_malicious_output_omits_them():
+    response = copy.deepcopy(VALID_MALICIOUS)
+    for step in response["steps"]:
+        step.pop("technique_labels", None)
+
+    result = ScenarioAgent(FakeStructuredClient(response)).run(
+        "WMI to PowerShell",
+        label="malicious",
+        plan={"technique_ids": ["T1047", "T1059.001"]},
+    )
+
+    labels = {
+        label
+        for step in result.spec["steps"]
+        for label in step.get("technique_labels", [])
+    }
+    assert labels == {"T1047", "T1059.001"}
+
+
 def test_scenario_agent_rejects_mismatched_caller_technique_labels():
     with pytest.raises(ScenarioSpecError, match="technique labels"):
         ScenarioAgent(FakeStructuredClient(VALID_MALICIOUS)).run(

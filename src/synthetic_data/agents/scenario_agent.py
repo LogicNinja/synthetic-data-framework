@@ -192,6 +192,36 @@ class ScenarioAgent(BaseAgent):
         # rejects a specification whose behavior does not support that class.
         if constraints["label"] is not None:
             generated["label"] = constraints["label"]
+
+        # A malicious spec with no labels cannot enter the simulator. When a
+        # caller pinned labels, or the Planner supplied ATT&CK hypotheses, use
+        # them as a provisional fallback only for this omission. They remain
+        # visible in the spec for Critic and domain review; this does not claim
+        # an externally verified technique mapping.
+        generated_labels = [
+            item
+            for step in generated.get("steps", [])
+            if isinstance(step, dict)
+            for item in step.get("technique_labels", [])
+        ]
+        fallback_labels = (
+            technique_labels
+            if technique_labels is not None
+            else (plan or {}).get("technique_ids", [])
+        )
+        if (
+            generated.get("label") == "malicious"
+            and not generated_labels
+            and isinstance(fallback_labels, list)
+            and fallback_labels
+        ):
+            steps = [step for step in generated.get("steps", []) if isinstance(step, dict)]
+            process_step = next(
+                (step for step in steps if step.get("action") in {"start_process", "spawn_child"}),
+                None,
+            )
+            if process_step is not None:
+                process_step["technique_labels"] = list(fallback_labels)
         if technique_labels is not None:
             generated_labels = sorted({
                 label for step in generated.get("steps", [])
