@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://synthetic-data-framework.local/schemas/scenario_spec.schema.json",
+  "title": "Synthetic Windows Scenario Specification",
+  "description": "Declarative scenario consumed by synthetic_data.scenarios.spec.validate_spec.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scenario_id", "hostname", "username", "label", "steps"],
+  "properties": {
+    "scenario_id": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "hostname": { "type": "string", "minLength": 1 },
+    "username": { "type": "string", "minLength": 1 },
+    "label": { "enum": ["malicious", "benign"] },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["action", "process_id", "image", "command_line", "original_file_name", "timestamp"],
+            "properties": {
+              "action": { "const": "start_process" },
+              "process_id": { "type": "string", "minLength": 1 },
+              "image": { "type": "string", "minLength": 1 },
+              "command_line": { "type": "string", "minLength": 1 },
+              "original_file_name": { "type": "string", "minLength": 1 },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "technique_labels": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["action", "parent_process_id", "process_id", "image", "command_line", "original_file_name", "timestamp"],
+            "properties": {
+              "action": { "const": "spawn_child" },
+              "parent_process_id": { "type": "string", "minLength": 1 },
+              "process_id": { "type": "string", "minLength": 1 },
+              "image": { "type": "string", "minLength": 1 },
+              "command_line": { "type": "string", "minLength": 1 },
+              "original_file_name": { "type": "string", "minLength": 1 },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "technique_labels": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["action", "file_path", "timestamp"],
+            "properties": {
+              "action": { "const": "create_file" },
+              "file_path": { "type": "string", "minLength": 1 },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "size": { "type": "integer", "minimum": 0 },
+              "technique_labels": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["action", "file_path", "timestamp"],
+            "properties": {
+              "action": { "const": "modify_file" },
+              "file_path": { "type": "string", "minLength": 1 },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "size": { "type": "integer", "minimum": 0 },
+              "technique_labels": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
