@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "synthetic-data-framework"
+version = "0.1.0"
+description = "Simulation-first Windows security telemetry generation and validation"
+requires-python = ">=3.11"
+dependencies = [
+    "jsonschema>=4.26,<5",
+    "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10"]
+dspy = ["dspy-ai>=2.6,<3"]
+defender = ["scikit-learn>=1.4,<2"]
+quantized-linux = [
+    "torch>=2.2",
+    "transformers>=4.45,<5",
+    "accelerate>=1.0",
+    "bitsandbytes>=0.45",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

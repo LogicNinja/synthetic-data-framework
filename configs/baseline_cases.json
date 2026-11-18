@@ -1,0 +1,32 @@
+[
+  {
+    "case_id": "wmi_powershell_attack",
+    "request": "Simulate WMI starting PowerShell, with both process events and their parent-child relationship.",
+    "constraints": {
+      "scenario_id": "BASELINE_WMI_PS",
+      "hostname": "WS-BASELINE-001",
+      "username": "synthetic_user",
+      "label": "malicious"
+    }
+  },
+  {
+    "case_id": "benign_log_file",
+    "request": "Simulate a benign application creating and then modifying an application log file.",
+    "constraints": {
+      "scenario_id": "BASELINE_BENIGN_FILE",
+      "hostname": "WS-BASELINE-002",
+      "username": "synthetic_user",
+      "label": "benign"
+    }
+  },
+  {
+    "case_id": "benign_parent_child",
+    "request": "Simulate a benign scheduled management utility starting a child process.",
+    "constraints": {
+      "scenario_id": "BASELINE_BENIGN_CHILD",
+      "hostname": "WS-BASELINE-003",
+      "username": "synthetic_user",
+      "label": "benign"
+    }
+  }
+]

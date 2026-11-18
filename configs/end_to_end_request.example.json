@@ -1,0 +1,19 @@
+{
+  "attack_type": "WMI and PowerShell process execution",
+  "scenario": "Generate varied WMI-to-PowerShell and benign administrative look-alike scenarios.",
+  "difficulty": "medium",
+  "scenario_count": 20,
+  "labels": [
+    "malicious", "benign", "malicious", "benign", "malicious",
+    "benign", "malicious", "benign", "malicious", "benign",
+    "malicious", "benign", "malicious", "benign", "malicious",
+    "benign", "malicious", "benign", "malicious", "benign"
+  ],
+  "constraints": {
+    "scenario_id_prefix": "WMI_PS",
+    "hostname": "WS-SYNTH-001",
+    "username": "synthetic_user",
+    "required_processes": ["powershell.exe"],
+    "required_event_types": ["process_creation"]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Scenario Critic Output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decision", "findings", "coverage_assessment", "realism_assessment", "diversity_assessment", "accuracy_assessment", "consistency_assessment", "completeness_assessment", "rubric_scores", "label_caveat"],
+  "properties": {
+    "decision": { "enum": ["accept", "revise", "reject"] },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "issue", "recommendation"],
+        "properties": {
+          "severity": { "enum": ["low", "medium", "high"] },
+          "issue": { "type": "string", "minLength": 1 },
+          "recommendation": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "coverage_assessment": { "type": "string" },
+    "realism_assessment": { "type": "string" },
+    "diversity_assessment": { "type": "string" },
+    "accuracy_assessment": { "type": "string" },
+    "consistency_assessment": { "type": "string" },
+    "completeness_assessment": { "type": "string" },
+    "rubric_scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accuracy", "diversity", "realism", "consistency", "completeness"],
+      "properties": {
+        "accuracy": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "diversity": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "realism": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "consistency": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "completeness": { "type": "integer", "minimum": 1, "maximum": 5 }
+      }
+    },
+    "label_caveat": { "type": "string" }
+  }
+}

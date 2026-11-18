@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "End-to-end synthetic telemetry request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["attack_type", "scenario", "difficulty", "scenario_count", "labels", "constraints"],
+  "properties": {
+    "attack_type": { "type": "string", "minLength": 1 },
+    "scenario": { "type": "string", "minLength": 1 },
+    "difficulty": { "enum": ["easy", "medium", "hard"] },
+    "scenario_count": { "type": "integer", "minimum": 3, "maximum": 20 },
+    "labels": {
+      "type": "array",
+      "minItems": 3,
+      "items": { "enum": ["malicious", "benign"] }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scenario_id_prefix": { "type": "string", "minLength": 1 },
+        "hostname": { "type": "string", "minLength": 1 },
+        "username": { "type": "string", "minLength": 1 },
+        "start_timestamp": { "type": "string", "format": "date-time" },
+        "technique_labels": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$" } },
+        "required_processes": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "forbidden_processes": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "required_actions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "forbidden_actions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "required_event_types": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "must_include": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "must_not_include": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    }
+  }
+}

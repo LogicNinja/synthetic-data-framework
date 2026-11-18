@@ -2,14 +2,14 @@
 
 spec -> simulator events -> action trace provenance validation
      -> Sigma detections -> schema validation
-     -> domain realism validation
+     -> event logic and domain consistency checks
      -> JSONL dataset -> reload and compare
      -> optional reference-based statistical realism evaluation.
 
 Run it from the repo root with:
     python -m synthetic_data.pipeline.runner s2_wmi_powershell
 
-To include Layer 4:
+To include reference-based Layer 3 realism:
     python -m synthetic_data.pipeline.runner s2_wmi_powershell --reference data/reference/windows_events.jsonl
 """
 
@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from synthetic_data.config.settings import KNOWLEDGE_DIR
+from synthetic_data.config.settings import CONFIG_DIR, KNOWLEDGE_DIR, REPORTS_DIR
 from synthetic_data.detection.sigma_evaluator import (
     SigmaEvaluationError,
     SigmaEvaluator,
@@ -38,6 +38,12 @@ from synthetic_data.validation.domain_realism import validate_domain_realism
 from synthetic_data.validation.reference_realism import (
     DEFAULT_MINIMUM_SAMPLE_SIZE,
     evaluate_reference_realism,
+)
+from synthetic_data.validation.four_layer import (
+    FourLayerValidationReport,
+    ValidationCriteria,
+    build_four_layer_report,
+    load_validation_criteria,
 )
 
 
@@ -75,6 +81,8 @@ class PipelineReport:
     detections: dict[str, list[str]] = field(default_factory=dict)
     saved_path: str | None = None
     roundtrip_ok: bool = False
+    validation_report: dict[str, Any] | None = None
+    final_promotion_blocked: bool = False
 
     @property
     def ok(self) -> bool:
@@ -90,6 +98,36 @@ class PipelineReport:
             and self.roundtrip_ok
             and self.rules_failed_to_load == 0
         )
+
+    @property
+    def validated(self) -> bool:
+        """True only when the consolidated four-layer gate passes."""
+        return bool(self.validation_report and self.validation_report.get("validated"))
+
+
+def _consolidate_validation(
+    report: PipelineReport,
+    *,
+    reference_report: Any | None,
+    critic_accepted: bool | None,
+    utility_report: dict[str, Any] | None,
+    criteria: ValidationCriteria | None,
+) -> FourLayerValidationReport:
+    validation = build_four_layer_report(
+        criteria=criteria,
+        provenance_errors=report.provenance_errors,
+        schema_errors=report.schema_errors,
+        domain_errors=report.domain_realism_errors,
+        domain_warnings=report.domain_realism_warnings,
+        roundtrip_ok=report.roundtrip_ok,
+        rules_failed_to_load=report.rules_failed_to_load,
+        unsupported_sigma_evaluations=report.unsupported_evaluations,
+        reference_report=reference_report,
+        critic_accepted=critic_accepted,
+        utility_report=utility_report,
+    )
+    report.validation_report = validation.to_dict()
+    return validation
 
 
 def load_rules(rule_dir: str | Path) -> tuple[list[dict[str, Any]], int]:
@@ -194,12 +232,15 @@ def run_pipeline(
     dataset_type: str = "generated",
     filename: str | None = None,
     reference_path: str | Path | None = None,
+    critic_accepted: bool | None = None,
+    utility_report: dict[str, Any] | None = None,
+    validation_criteria: ValidationCriteria | None = None,
 ) -> PipelineReport:
     """Run one spec through the pipeline and report what happened.
 
-    Layer 4 is optional. If reference_path is omitted, the report records
-    that no reference comparison was requested. If supplied, the reference
-    dataset is evaluated after the generated dataset is saved and reloaded.
+    This function runs L1-L3 pipeline checks. L4 utility metrics and the
+    Critic decision must be supplied by the corresponding evaluation stages
+    before an artifact can be promoted to ``final``.
     """
     result = ScenarioRunner().run(
         scenario_id=spec["scenario_id"],
@@ -257,6 +298,13 @@ def run_pipeline(
         or report.provenance_errors
         or report.domain_realism_errors
     ):
+        _consolidate_validation(
+            report,
+            reference_report=None,
+            critic_accepted=critic_accepted,
+            utility_report=utility_report,
+            criteria=validation_criteria,
+        )
         return report
 
     filename = filename or f"{spec['scenario_id'].lower()}_{run_id}.jsonl"
@@ -267,24 +315,33 @@ def run_pipeline(
         report.unsupported_evaluations,
     )
 
+    requested_type = dataset_type
+    staging_type = "generated" if dataset_type == "final" else dataset_type
     path = DatasetStore.save(
         events,
-        dataset_type,
+        staging_type,
         filename,
         metadata=metadata,
     )
     report.saved_path = str(path)
 
-    reloaded = DatasetStore.load(dataset_type, filename)
+    reloaded = DatasetStore.load(staging_type, filename)
     report.roundtrip_ok = (
         [e.to_dict() for e in events] == [e.to_dict() for e in reloaded]
     )
 
-    # Layer 4: optional comparison against reference telemetry.
+    # Layer 3: optional comparison against reference telemetry.
+    reference_report = None
     if reference_path is not None:
+        minimum_reference_sample_size = (
+            validation_criteria.minimum_reference_sample_size
+            if validation_criteria is not None
+            else DEFAULT_MINIMUM_SAMPLE_SIZE
+        )
         reference_report = evaluate_reference_realism(
             path,
             reference_path,
+            minimum_sample_size=minimum_reference_sample_size,
         )
 
         report.reference_realism_status = reference_report.status
@@ -298,10 +355,36 @@ def run_pipeline(
         report.reference_sample_adequacy = (
             reference_report.sample_adequacy
         )
-        report.reference_minimum_sample_size = (
-            reference_report.minimum_sample_size
-        )
+        report.reference_minimum_sample_size = reference_report.minimum_sample_size
         report.reference_realism_errors = reference_report.errors
+
+    consolidated = _consolidate_validation(
+        report,
+        reference_report=reference_report,
+        critic_accepted=critic_accepted,
+        utility_report=utility_report,
+        criteria=validation_criteria,
+    )
+    validation_metadata = {
+        "validation_status": consolidated.decision,
+        "validated": consolidated.validated,
+        "validation_report": consolidated.to_dict(),
+    }
+    if requested_type == "final" and not consolidated.validated:
+        report.final_promotion_blocked = True
+        report.validation_report["final_promotion_blocked"] = True
+        validation_metadata["validation_report"] = report.validation_report
+        validation_metadata["final_promotion_blocked"] = True
+    DatasetStore.update_metadata(staging_type, filename, validation_metadata)
+
+    if requested_type == "final" and consolidated.validated:
+        final_path = DatasetStore.save(
+            events,
+            "final",
+            filename,
+            metadata={**metadata, **validation_metadata},
+        )
+        report.saved_path = str(final_path)
 
     return report
 
@@ -318,7 +401,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--reference",
         default=None,
-        help="optional reference telemetry JSONL file for Layer 4",
+        help="optional reference telemetry JSONL file for Layer 3 realism",
+    )
+    parser.add_argument(
+        "--report",
+        default=None,
+        help="consolidated validation JSON report path",
+    )
+    parser.add_argument(
+        "--criteria",
+        default=str(CONFIG_DIR / "validation_criteria.json"),
+        help="JSON file containing four-layer acceptance thresholds",
     )
     args = parser.parse_args(argv)
 
@@ -337,17 +430,22 @@ def main(argv: list[str] | None = None) -> int:
         run_id=run_id,
         rules_failed_to_load=failed,
         reference_path=args.reference,
+        validation_criteria=load_validation_criteria(args.criteria),
+    )
+
+    report_path = Path(args.report) if args.report else (
+        REPORTS_DIR / f"validation_{run_id}.json"
+    )
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(asdict(report), indent=2, default=str) + "\n",
+        encoding="utf-8",
     )
 
     print(json.dumps(asdict(report), indent=2, default=str))
-    print(f"rules failed to load: {failed}")
-    print(f"Layer 4 status: {report.reference_realism_status}")
-    print(f"Layer 4 similarity: {report.reference_similarity_score}")
-    print(f"Layer 4 sample adequacy: {report.reference_sample_adequacy}")
-    print(
-        "Layer 4 minimum sample size: "
-        f"{report.reference_minimum_sample_size}"
-    )
+    print(f"Consolidated validation decision: {report.validation_report['decision']}")
+    print(f"Four-layer validated: {report.validated}")
+    print(f"Validation report saved to: {report_path}")
     print(f"OK: {report.ok}")
 
     return 0 if report.ok else 1

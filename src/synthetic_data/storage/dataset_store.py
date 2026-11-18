@@ -146,6 +146,9 @@ class DatasetStore:
             }
 
             # Write the manifest to its own temporary file.
+            # Recreate the parent in case an external cleanup or concurrent
+            # staging operation removed it after the dataset temp was opened.
+            path.parent.mkdir(parents=True, exist_ok=True)
             file_descriptor, manifest_temp_name = tempfile.mkstemp(
                 prefix=f".{manifest_path.name}.",
                 suffix=".tmp",
@@ -212,6 +215,27 @@ class DatasetStore:
 
         with manifest_path.open("r", encoding="utf-8") as file:
             return json.load(file)
+
+    @classmethod
+    def update_metadata(
+        cls,
+        dataset_type: str,
+        filename: str,
+        metadata_updates: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Merge metadata into an existing manifest without changing data bytes."""
+        path = cls.get_dataset_path(dataset_type, filename)
+        if not path.is_file():
+            raise FileNotFoundError(f"Dataset not found: {path}")
+        manifest_path = cls._get_manifest_path(path)
+        if not manifest_path.is_file():
+            raise FileNotFoundError(f"Dataset metadata not found: {manifest_path}")
+        with manifest_path.open("r", encoding="utf-8") as file:
+            manifest = json.load(file)
+        metadata = manifest.setdefault("metadata", {})
+        metadata.update(metadata_updates)
+        cls._write_json_atomically(manifest, manifest_path)
+        return manifest
 
     @classmethod
     def verify_metadata(

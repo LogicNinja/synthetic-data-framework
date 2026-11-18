@@ -1,0 +1,20 @@
+{
+  "attack_type": "Windows process execution and benign administrative activity",
+  "scenario": "Generate varied but simulator-supported parent-child process scenarios. For each malicious case, include a PowerShell child process launched by a plausible parent and label it with the supplied ATT&CK technique. For benign cases, use ordinary administrative or user activity such as Explorer launching Notepad, with no ATT&CK labels. Preserve the requested ground-truth label and vary executable pairs and command lines across scenarios.",
+  "difficulty": "medium",
+  "scenario_count": 20,
+  "labels": [
+    "malicious", "benign", "malicious", "benign", "malicious",
+    "benign", "malicious", "benign", "malicious", "benign",
+    "malicious", "benign", "malicious", "benign", "malicious",
+    "benign", "malicious", "benign", "malicious", "benign"
+  ],
+  "constraints": {
+    "scenario_id_prefix": "OLLAMA100",
+    "hostname": "WS-SYNTH-001",
+    "username": "synthetic_user",
+    "technique_labels": ["T1059.001"],
+    "required_actions": ["start_process", "spawn_child"],
+    "required_event_types": ["process_creation"]
+  }
+}

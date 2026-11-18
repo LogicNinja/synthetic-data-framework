@@ -1,0 +1,7 @@
+{
+  "minimum_reference_sample_size": 30,
+  "minimum_reference_similarity": 0.5,
+  "maximum_unsupported_sigma_evaluations": 0,
+  "minimum_macro_f1": 0.7,
+  "minimum_macro_f1_delta": 0.0
+}
