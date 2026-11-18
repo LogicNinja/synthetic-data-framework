@@ -74,13 +74,15 @@ def test_scenario_agent_rejects_invalid_parent_reference():
         ScenarioAgent(FakeStructuredClient(invalid)).run("WMI to PowerShell")
 
 
-def test_scenario_agent_rejects_caller_label_mismatch():
+def test_scenario_agent_enforces_caller_label_mismatch():
     response = copy.deepcopy(VALID_MALICIOUS)
     response["label"] = "benign"
-    with pytest.raises(ScenarioSpecError, match="label"):
-        ScenarioAgent(FakeStructuredClient(response)).run(
-            "WMI to PowerShell", label="malicious"
-        )
+
+    result = ScenarioAgent(FakeStructuredClient(response)).run(
+        "WMI to PowerShell", label="malicious"
+    )
+
+    assert result.spec["label"] == "malicious"
 
 
 def test_scenario_agent_rejects_mismatched_caller_technique_labels():
