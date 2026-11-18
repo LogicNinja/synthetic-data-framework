@@ -75,10 +75,10 @@ def _scenario_names() -> list[str]:
     return sorted(path.stem for path in SPEC_DIR.glob("*.json"))
 
 
-def _run_validated_scenario(scenario_name: str) -> tuple[dict, list[dict]]:
+def _run_spec(spec: dict) -> tuple[dict, list[dict]]:
     rules, failed_rules = load_rules(DEFAULT_RULE_DIR)
     report = run_pipeline(
-        load_builtin_spec(scenario_name),
+        spec,
         rules,
         run_id=datetime.now(timezone.utc).strftime("ui-%Y%m%dT%H%M%SZ"),
         rules_failed_to_load=failed_rules,
@@ -87,6 +87,10 @@ def _run_validated_scenario(scenario_name: str) -> tuple[dict, list[dict]]:
     )
     events = read_jsonl(report.saved_path) if report.saved_path else []
     return asdict(report), [event.to_dict() for event in events]
+
+
+def _run_validated_scenario(scenario_name: str) -> tuple[dict, list[dict]]:
+    return _run_spec(load_builtin_spec(scenario_name))
 
 
 def _dataset_files(kind: str) -> list[Path]:
@@ -245,6 +249,16 @@ def main() -> None:
                     "reviews": [asdict(item) for item in result.critic_history],
                     "quality_report": result.quality_report,
                 })
+            if st.button("VALIDATE GENERATED SCENARIO", disabled=not result.critic_accepted):
+                with st.spinner("Simulating the Critic-approved specification…"):
+                    try:
+                        report, events = _run_spec(result.generation.spec)
+                    except (OSError, ValueError) as error:
+                        st.exception(error)
+                    else:
+                        st.session_state["latest_report"] = report
+                        st.session_state["latest_events"] = events
+                        st.success("Scenario passed to the simulator. Open Simulator + Validation to inspect its events and validation report.")
 
 
 if __name__ == "__main__":
