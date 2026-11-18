@@ -13,6 +13,9 @@ import urllib.request
 from typing import Any, Sequence
 
 
+DEFAULT_OLLAMA_MODEL = "llama3.2:latest"
+
+
 class OllamaError(RuntimeError):
     """Raised when the local Ollama service returns unusable output."""
 
@@ -29,7 +32,7 @@ class OllamaClient:
         temperature: float = 0.1,
     ) -> None:
         self.config = SimpleNamespace(
-            model=(model or os.getenv("OLLAMA_MODEL", "qwen2.5:7b")).strip(),
+            model=(model or os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)).strip(),
             host=(host or os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")).rstrip("/"),
             timeout_seconds=timeout_seconds,
             temperature=temperature,

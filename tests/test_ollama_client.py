@@ -1,6 +1,14 @@
 import json
 
-from synthetic_data.agents.ollama_client import OllamaClient
+from synthetic_data.agents.ollama_client import DEFAULT_OLLAMA_MODEL, OllamaClient
+
+
+def test_ollama_client_uses_demo_ready_default_model(monkeypatch):
+    monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+
+    client = OllamaClient()
+
+    assert client.config.model == DEFAULT_OLLAMA_MODEL == "llama3.2:latest"
 
 
 def test_ollama_client_sends_json_schema_and_parses_structured_response(monkeypatch):
