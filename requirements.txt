@@ -5,3 +5,4 @@ rfc3339-validator>=0.1.4,<1
 
 # Test dependencies
 pytest>=8,<10
+streamlit>=1.40,<2
