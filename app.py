@@ -11,8 +11,14 @@ from urllib.request import urlopen
 
 import streamlit as st
 
+from synthetic_data.agents.critic_agent import CriticAgent
+from synthetic_data.agents.ollama_client import DEFAULT_OLLAMA_MODEL, OllamaClient
+from synthetic_data.agents.planner_agent import PlannerAgent
+from synthetic_data.agents.scenario_agent import ScenarioAgent
+from synthetic_data.agents.workflow import GenerationWorkflow
 from synthetic_data.config.settings import CONFIG_DIR
 from synthetic_data.pipeline.runner import DEFAULT_RULE_DIR, load_rules, run_pipeline
+from synthetic_data.retrieval.local_bm25 import LocalBM25Retriever
 from synthetic_data.scenarios.spec import SPEC_DIR, load_builtin_spec
 from synthetic_data.serialization.event_serializer import read_jsonl
 from synthetic_data.storage.dataset_store import DatasetStore
@@ -86,6 +92,29 @@ def _run_validated_scenario(scenario_name: str) -> tuple[dict, list[dict]]:
 def _dataset_files(kind: str) -> list[Path]:
     root = DatasetStore.DATASET_TYPES[kind]
     return sorted(root.glob("*.jsonl")) if root.is_dir() else []
+
+
+def _run_agent_workflow(request: str, coverage_gap: str, hard_case: str, model: str):
+    """Run the existing Planner → Scenario Agent → Critic backend."""
+    client = OllamaClient(model=model)
+    workflow = GenerationWorkflow(
+        PlannerAgent(client),
+        ScenarioAgent(
+            client,
+            retriever=LocalBM25Retriever([
+                Path("docs"),
+                Path("knowledge/windows_refs"),
+                DEFAULT_RULE_DIR,
+            ]),
+        ),
+        CriticAgent(client),
+        max_attempts=3,
+    )
+    return workflow.run(
+        request,
+        coverage_gaps=[coverage_gap] if coverage_gap.strip() else None,
+        hard_cases=[hard_case] if hard_case.strip() else None,
+    )
 
 
 def main() -> None:
@@ -173,12 +202,49 @@ def main() -> None:
         available = _ollama_available()
         status_text = "Ollama service detected" if available else "Ollama is not reachable at http://127.0.0.1:11434"
         (st.success if available else st.warning)(status_text)
-        st.markdown(
-            '<div class="light-card"><strong>Demo-safe mode</strong><br>Use the Simulator + Validation tab while a model is unavailable. The completed end-to-end backend remains available through <code>scripts/run_end_to_end.py</code> once Ollama and its model are ready.</div>',
-            unsafe_allow_html=True,
-        )
-        st.code("python scripts/run_end_to_end.py configs/end_to_end_request.example.json --reference <reference.jsonl> --training <train.jsonl> --heldout <heldout.jsonl> --output-root data/final", language="powershell")
-        st.caption("The full workflow requires reference, training, and held-out telemetry so it can enforce reference realism and held-out Defender utility.")
+        st.markdown('<div class="light-card"><strong>AGENT WORKFLOW READY</strong><br>Generate a simulator-supported scenario, inspect the plan and Critic decision, then validate it in the Simulator + Validation tab.</div>', unsafe_allow_html=True)
+        with st.form("agent-workflow"):
+            request = st.text_area(
+                "Scenario request",
+                value="Simulate WMI starting PowerShell with a benign look-alike.",
+                help="This produces a declarative scenario specification. It never executes actions on your computer.",
+            )
+            left, center, right = st.columns(3)
+            coverage_gap = left.text_input("Coverage gap", value="WMI parent-child coverage")
+            hard_case = center.text_input("Hard case", value="Benign administrative look-alike")
+            model = right.text_input("Ollama model", value=DEFAULT_OLLAMA_MODEL)
+            run_agents = st.form_submit_button("RUN AGENT WORKFLOW", disabled=not available, use_container_width=True)
+
+        if run_agents:
+            if not request.strip():
+                st.error("Enter a scenario request first.")
+            elif not DEFAULT_RULE_DIR.is_dir():
+                st.error("Sigma rules are unavailable. Run: git submodule update --init --recursive")
+            else:
+                with st.spinner("Planner, Scenario Agent, and Critic are working…"):
+                    try:
+                        result = _run_agent_workflow(request, coverage_gap, hard_case, model)
+                    except (OSError, RuntimeError, ValueError) as error:
+                        st.exception(error)
+                    else:
+                        st.session_state["agent_result"] = result
+
+        result = st.session_state.get("agent_result")
+        if result:
+            st.success("Critic accepted the scenario." if result.critic_accepted else "Critic requested another revision; inspect the feedback below.")
+            left, right = st.columns(2)
+            with left:
+                st.markdown("#### Planner output")
+                st.json(result.plan.data)
+            with right:
+                st.markdown("#### Generated scenario")
+                st.json(result.generation.spec)
+            with st.expander("Critic review and quality report", expanded=True):
+                st.json({
+                    "critic_accepted": result.critic_accepted,
+                    "reviews": [asdict(item) for item in result.critic_history],
+                    "quality_report": result.quality_report,
+                })
 
 
 if __name__ == "__main__":
