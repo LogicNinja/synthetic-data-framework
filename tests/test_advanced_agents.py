@@ -96,6 +96,15 @@ def test_planner_rejects_malicious_plan_without_technique_ids():
         PlannerAgent(FakeClient(invalid)).run("malicious behavior")
 
 
+def test_planner_repairs_benign_label_when_techniques_are_present():
+    inconsistent = {**PLAN, "label": "benign"}
+
+    result = PlannerAgent(FakeClient(inconsistent)).run("Simulate WMI starting PowerShell.")
+
+    assert result.data["label"] == "malicious"
+    assert result.data["technique_ids"] == ["T1047", "T1059.001"]
+
+
 def test_critic_runs_deterministic_checks_before_model_review():
     invalid = {**VALID_SPEC, "steps": []}
     client = FakeClient(VALID_REVIEW)

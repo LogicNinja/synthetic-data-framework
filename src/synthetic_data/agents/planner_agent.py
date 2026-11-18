@@ -21,7 +21,9 @@ and prioritize explicit coverage gaps and hard cases. The budget is a limit
 on scenario count, not a request to exceed the user's scope. All output is a
 plan for simulated events; never recommend executing actions on a real host.
 Technique IDs in your plan are hypotheses for scenario design, not verified
-ground truth. Do not claim that they were externally checked."""
+ground truth. Do not claim that they were externally checked. A plan with one
+or more technique IDs must use the malicious label; a benign plan must return
+an empty technique_ids array."""
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,18 @@ class PlannerAgent(BaseAgent):
         if image_paths:
             kwargs["image_paths"] = image_paths
         plan = self.client.generate_json(**kwargs)
+        # Some smaller local models correctly identify ATT&CK techniques but
+        # mistakenly select the benign enum value. Technique IDs are only
+        # permitted for malicious plans, so this is an unambiguous repair that
+        # preserves the model's substantive scenario choice. The opposite
+        # mismatch remains an error: inventing labels would alter intent.
+        if (
+            isinstance(plan, dict)
+            and plan.get("label") == "benign"
+            and isinstance(plan.get("technique_ids"), list)
+            and plan["technique_ids"]
+        ):
+            plan = {**plan, "label": "malicious"}
         errors = sorted(
             Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(plan),
             key=lambda error: list(map(str, error.absolute_path)),
