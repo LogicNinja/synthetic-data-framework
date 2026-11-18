@@ -196,3 +196,23 @@ def test_workflow_retries_revisions_and_stops_after_acceptance():
     assert result.quality_report["rejected"] == 1
     assert result.quality_report["acceptance_rate"] == 0.5
 
+
+def test_workflow_treats_planner_techniques_as_guidance_when_not_pinned():
+    class Planner:
+        def run(self, *args, **kwargs):
+            return type("Plan", (), {"data": PLAN, "model": "planner"})()
+
+    class Scenario:
+        def run(self, request, **kwargs):
+            assert kwargs["label"] == "malicious"
+            assert kwargs["technique_labels"] is None
+            return ScenarioGenerationResult(VALID_SPEC, "scenario")
+
+    class Critic:
+        def run(self, spec, **kwargs):
+            return CriticResult("accept", (), "Covered.", "Plausible.", "Varied.", "Review labels.", "critic")
+
+    result = GenerationWorkflow(Planner(), Scenario(), Critic()).run("WMI to PowerShell")
+
+    assert result.critic_accepted
+
