@@ -87,6 +87,7 @@ def main() -> int:
         heldout_events=read_jsonl(args.heldout),
         output_root=args.output_root,
         rules=rules,
+        rules_failed_to_load=failed_rules,
         validation_criteria=load_validation_criteria(args.criteria),
         random_seed=args.seed,
         progress_callback=lambda message: print(message, file=sys.stderr, flush=True),

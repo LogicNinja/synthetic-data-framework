@@ -116,3 +116,60 @@ def test_end_to_end_orchestrator_publishes_validated_telemetry_and_chat_splits(t
     assert manifest["metadata"]["validated"] is True
     assert len(read_jsonl(result.final_telemetry_path)) == 4
     assert (tmp_path / "final" / "reports" / "quality_report.json").exists()
+
+
+def test_end_to_end_does_not_publish_an_undersized_dataset_but_keeps_the_audit_record(tmp_path):
+    class Workflow:
+        def run(self, prompt, **kwargs):
+            constraints = kwargs["scenario_constraints"]
+            return SimpleNamespace(
+                critic_accepted=True,
+                generation=SimpleNamespace(spec={
+                    "scenario_id": constraints["scenario_id"],
+                    "label": constraints["label"],
+                }),
+                quality_report={"rejection_reasons": []},
+            )
+
+    def fake_pipeline(spec, rules, *, run_id, **kwargs):
+        event = _event(f"generated-{run_id}", spec["scenario_id"], run_id, spec["label"])
+        path = DatasetStore.save([event], "generated", f"{spec['scenario_id']}.jsonl")
+        return SimpleNamespace(
+            ok=True,
+            saved_path=str(path),
+            provenance_errors=[],
+            schema_errors={},
+            domain_realism_errors=[],
+            domain_realism_warnings=[],
+            rules_failed_to_load=0,
+            unsupported_evaluations=0,
+            roundtrip_ok=True,
+        )
+
+    criteria = ValidationCriteria(
+        minimum_reference_sample_size=1,
+        minimum_reference_similarity=0.0,
+        maximum_unsupported_sigma_evaluations=0,
+        minimum_macro_f1=0.0,
+        minimum_macro_f1_delta=-1.0,
+    )
+    reference = _eval_data("reference")
+    result = run_end_to_end(
+        _request(),
+        workflow=Workflow(),
+        reference_events=reference,
+        training_events=_eval_data("train"),
+        heldout_events=_eval_data("heldout"),
+        output_root=tmp_path / "final",
+        validation_criteria=criteria,
+        pipeline_runner=fake_pipeline,
+        minimum_final_event_count=5,
+    )
+
+    assert not result.complete
+    assert result.final_telemetry_path is None
+    assert result.report["validated_event_count"] == 4
+    assert not result.report["minimum_event_count_met"]
+    outcomes = json.loads((tmp_path / "final" / "reports" / "all_scenario_outcomes.json").read_text(encoding="utf-8"))
+    assert len(outcomes) == 4
+    assert all("generated_spec" in outcome for outcome in outcomes)

@@ -103,13 +103,17 @@ def run_end_to_end(
     heldout_events: Sequence[Any],
     output_root: str | Path,
     rules: list[dict[str, Any]] | None = None,
+    rules_failed_to_load: int = 0,
     validation_criteria: ValidationCriteria | None = None,
     pipeline_runner: Callable[..., Any] | None = None,
     random_seed: int = 17,
+    minimum_final_event_count: int = 1,
     progress_callback: Callable[[str], None] | None = None,
 ) -> EndToEndResult:
     """Run one complete offline-data workflow. Agent API calls use injected workflow clients."""
     validate_generation_request(request)
+    if minimum_final_event_count < 1:
+        raise ValueError("minimum_final_event_count must be at least 1.")
     if not reference_events or not training_events or not heldout_events:
         raise ValueError("Reference, training, and held-out telemetry must all be non-empty.")
     criteria = validation_criteria or ValidationCriteria()
@@ -218,13 +222,39 @@ def run_end_to_end(
             hard_cases = list(task["hard_cases"])
             if request["difficulty"] == "hard":
                 hard_cases.append("Include a challenging but simulator-supported edge case.")
-            generated = workflow.run(
-                task["prompt"],
-                hard_cases=hard_cases,
-                existing_scenarios=accepted_scenarios,
-                scenario_constraints=common,
-                scenario_requirements=requirements,
-            )
+            try:
+                generated = workflow.run(
+                    task["prompt"],
+                    hard_cases=hard_cases,
+                    existing_scenarios=accepted_scenarios,
+                    scenario_constraints=common,
+                    scenario_requirements=requirements,
+                )
+            except (OSError, RuntimeError, ValueError) as error:
+                # A local model can time out or return malformed output. Keep
+                # the failed request in the audit trail and continue with the
+                # remaining budget instead of losing an entire long-running
+                # dataset job to one unavailable response.
+                outcomes.append({
+                    "scenario_id": scenario_id,
+                    "label": label,
+                    "source": task["source"],
+                    "target_failure_ids": task["target_failure_ids"],
+                    "critic_accepted": False,
+                    "quality_report": {"generation_error": str(error)},
+                    "generated_spec": None,
+                    "pipeline_passed": False,
+                    "discarded": True,
+                    "rejection_reasons": [f"Generation failed: {error}"],
+                    "saved_path": None,
+                    "four_layer_validation": {
+                        key: {"status": "not_run", "reason": "Scenario generation did not complete."}
+                        for key in ("L1", "L2", "L3", "L4")
+                    },
+                })
+                if progress_callback is not None:
+                    progress_callback(f"[{task_index}/{len(scenario_queue)}] {scenario_id}: generation failed; continuing")
+                continue
             outcome: dict[str, Any] = {
                 "scenario_id": scenario_id,
                 "label": label,
@@ -232,6 +262,7 @@ def run_end_to_end(
                 "target_failure_ids": task["target_failure_ids"],
                 "critic_accepted": generated.critic_accepted,
                 "quality_report": generated.quality_report,
+                "generated_spec": generated.generation.spec,
                 "pipeline_passed": False,
                 "rejection_reasons": list(generated.quality_report.get("rejection_reasons", [])),
                 "saved_path": None,
@@ -253,6 +284,7 @@ def run_end_to_end(
                 generated.generation.spec,
                 rules or [],
                 run_id=f"e2e-{uuid4().hex}",
+                rules_failed_to_load=rules_failed_to_load,
                 reference_path=None,
                 critic_accepted=True,
                 validation_criteria=criteria,
@@ -347,9 +379,11 @@ def run_end_to_end(
                     error for layer in sample_report.layers.values() for error in layer.errors
                 )
         validation = aggregate_validation_reports(full_reports, criteria=criteria)
+        final_event_count = len(candidate_events)
+        minimum_event_count_met = final_event_count >= minimum_final_event_count
 
         fine_tuning_report: dict[str, Any] | None = None
-        if validation.validated:
+        if validation.validated and minimum_event_count_met:
             filename = "synthetic_events.jsonl"
             final_path = DatasetStore.save(
                 candidate_events,
@@ -399,7 +433,7 @@ def run_end_to_end(
                 utility_error = utility_error or str(error)
 
         report = {
-            "workflow_status": "complete" if validation.validated and fine_tuning_report else "incomplete",
+            "workflow_status": "complete" if validation.validated and minimum_event_count_met and fine_tuning_report else "incomplete",
             "request": request,
             "defender_baseline_metrics": baseline_metrics,
             "adversarial_proposal": adversarial_proposal,
@@ -409,6 +443,9 @@ def run_end_to_end(
             "total_scenario_attempts": len(scenario_queue),
             "critic_accepted_scenario_count": sum(item["critic_accepted"] for item in outcomes),
             "l1_l2_passed_scenario_count": len(candidates),
+            "validated_event_count": final_event_count,
+            "minimum_final_event_count": minimum_final_event_count,
+            "minimum_event_count_met": minimum_event_count_met,
             "generation_latency_seconds": sum(
                 item.get("quality_report", {}).get("generation_latency_seconds", 0.0)
                 for item in outcomes
@@ -436,8 +473,15 @@ def run_end_to_end(
             "fine_tuning_quality": fine_tuning_report,
             "critic_accepted_scenarios": report["critic_accepted_scenario_count"],
             "accepted_scenarios_passing_l1_l2": report["l1_l2_passed_scenario_count"],
+            "validated_event_count": final_event_count,
+            "minimum_final_event_count": minimum_final_event_count,
+            "minimum_event_count_met": minimum_event_count_met,
             "rejected_scenarios": [item for item in outcomes if item.get("discarded")],
         }
+        _atomic_write(
+            report_dir / "all_scenario_outcomes.json",
+            json.dumps(outcomes, indent=2, ensure_ascii=False, default=str) + "\n",
+        )
         _atomic_write(report_dir / "quality_report.json", json.dumps(quality_report, indent=2, ensure_ascii=False, default=str) + "\n")
         _atomic_write(report_dir / "end_to_end_report.json", json.dumps(report, indent=2, ensure_ascii=False, default=str) + "\n")
         return EndToEndResult(report, final_telemetry_path, fine_tuning_paths, report["workflow_status"] == "complete")

@@ -14,7 +14,11 @@ def serialize_event(event: CanonicalEvent) -> str:
     return json.dumps(
         event.to_dict(),
         ensure_ascii=False,
-        sort_keys=True,
+        # Preserve the canonical event field order so a JSONL record begins
+        # with its identity and timestamp instead of an alphabetic key such
+        # as ``detection_results``. JSONL still requires one complete object
+        # per physical line, so indentation is intentionally not used here.
+        sort_keys=False,
     )
 
 
