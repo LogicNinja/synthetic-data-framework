@@ -42,7 +42,7 @@ telemetry validators and ground-truth-derived targets validate the emitted
 events and training pairs. Human review remains an explicit manual step.
 
 The runner uses local Ollama by default and does not need an API key. Start
-Ollama and ensure the default `qwen2.5:7b` model is installed, or choose another
+Ollama and ensure the default `llama3.2:latest` model is installed, or choose another
 local model with `--model`. Use `--provider grok` only when you want the xAI
 hosted API. The result still depends on the supplied reference, training, and
 held-out datasets and configured acceptance thresholds. A process-creation

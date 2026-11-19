@@ -96,6 +96,15 @@ def test_planner_rejects_malicious_plan_without_technique_ids():
         PlannerAgent(FakeClient(invalid)).run("malicious behavior")
 
 
+def test_planner_repairs_benign_label_when_techniques_are_present():
+    inconsistent = {**PLAN, "label": "benign"}
+
+    result = PlannerAgent(FakeClient(inconsistent)).run("Simulate WMI starting PowerShell.")
+
+    assert result.data["label"] == "malicious"
+    assert result.data["technique_ids"] == ["T1047", "T1059.001"]
+
+
 def test_critic_runs_deterministic_checks_before_model_review():
     invalid = {**VALID_SPEC, "steps": []}
     client = FakeClient(VALID_REVIEW)
@@ -119,6 +128,29 @@ def test_critic_changes_accept_to_revise_for_high_severity_finding():
     )
     assert result.decision == "revise"
     assert not result.accepted
+
+
+def test_critic_ignores_generic_findings_contradicted_by_valid_draft():
+    generic_review = {
+        **VALID_REVIEW,
+        "decision": "revise",
+        "rubric_scores": {key: 1 for key in VALID_REVIEW["rubric_scores"]},
+        "findings": [
+            {"severity": "high", "issue": "Missing timestamp for the first step", "recommendation": "Add a timestamp."},
+            {"severity": "medium", "issue": "Lack of diversity in the scenario", "recommendation": "Add variety."},
+            {"severity": "high", "issue": "Missing parent-child relationship between the processes", "recommendation": "Add a parent."},
+        ],
+    }
+
+    result = CriticAgent(FakeClient(generic_review)).run(
+        VALID_SPEC,
+        request="Create a WMI child process scenario.",
+        plan=PLAN,
+        existing_scenarios=[],
+    )
+
+    assert result.accepted
+    assert result.findings == ()
 
 
 def test_critic_flags_near_duplicate_against_existing_scenarios():
@@ -186,4 +218,24 @@ def test_workflow_retries_revisions_and_stops_after_acceptance():
     assert result.quality_report["accepted"] == 1
     assert result.quality_report["rejected"] == 1
     assert result.quality_report["acceptance_rate"] == 0.5
+
+
+def test_workflow_treats_planner_techniques_as_guidance_when_not_pinned():
+    class Planner:
+        def run(self, *args, **kwargs):
+            return type("Plan", (), {"data": PLAN, "model": "planner"})()
+
+    class Scenario:
+        def run(self, request, **kwargs):
+            assert kwargs["label"] == "malicious"
+            assert kwargs["technique_labels"] is None
+            return ScenarioGenerationResult(VALID_SPEC, "scenario")
+
+    class Critic:
+        def run(self, spec, **kwargs):
+            return CriticResult("accept", (), "Covered.", "Plausible.", "Varied.", "Review labels.", "critic")
+
+    result = GenerationWorkflow(Planner(), Scenario(), Critic()).run("WMI to PowerShell")
+
+    assert result.critic_accepted
 

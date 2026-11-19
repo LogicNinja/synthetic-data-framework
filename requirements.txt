@@ -1,0 +1,8 @@
+# Runtime dependencies
+jsonschema>=4.26,<5
+PyYAML>=6.0,<7
+rfc3339-validator>=0.1.4,<1
+
+# Test dependencies
+pytest>=8,<10
+streamlit>=1.40,<2

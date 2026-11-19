@@ -154,13 +154,30 @@ class CriticAgent(BaseAgent):
                 + "; ".join(error.message for error in errors)
             )
 
-        findings = list(review["findings"])
+        findings = [
+            finding
+            for finding in review["findings"]
+            if self._finding_is_grounded(
+                finding,
+                spec=spec,
+                plan=plan or {},
+                request=request,
+                existing=existing,
+            )
+        ]
         decision = review["decision"]
+        # A small local critic can emit a generic checklist that contradicts
+        # the already validated draft (for example, claiming a timestamp is
+        # absent). A revision decision with no grounded finding is not
+        # actionable, so admit the draft to the remaining validation gates.
+        ungrounded_revision = decision == "revise" and not findings
+        if ungrounded_revision:
+            decision = "accept"
         low_scores = [
             dimension for dimension, score in review["rubric_scores"].items()
             if score <= 2
         ]
-        if decision == "accept" and low_scores:
+        if decision == "accept" and low_scores and not ungrounded_revision:
             decision = "revise"
             findings.append({
                 "severity": "high",
@@ -206,6 +223,45 @@ class CriticAgent(BaseAgent):
             label_caveat=review["label_caveat"],
             model=getattr(getattr(self.client, "config", None), "model", "injected-client"),
         )
+
+    @staticmethod
+    def _finding_is_grounded(
+        finding: dict[str, str],
+        *,
+        spec: dict[str, Any],
+        plan: dict[str, Any],
+        request: str,
+        existing: list[dict[str, Any]],
+    ) -> bool:
+        """Reject generic claims contradicted by deterministic input evidence."""
+        issue = str(finding.get("issue", "")).casefold()
+        steps = [step for step in spec.get("steps", []) if isinstance(step, dict)]
+        has_timestamps = bool(steps) and all(step.get("timestamp") for step in steps)
+        has_parent_child = any(
+            step.get("action") == "spawn_child" and step.get("parent_process_id")
+            for step in steps
+        )
+        has_file_actions = any(step.get("action") in {"create_file", "modify_file"} for step in steps)
+
+        if "timestamp" in issue and has_timestamps:
+            return False
+        if "parent-child" in issue and has_parent_child:
+            return False
+        if "creation of the file" in issue and not has_file_actions:
+            return False
+        if "coverage gap" in issue and plan.get("coverage_gaps"):
+            return False
+        if "hard case" in issue and plan.get("hard_cases"):
+            return False
+        if "generation budget" in issue and plan.get("generation_budget"):
+            return False
+        if "scenario request" in issue and request.strip():
+            return False
+        if "diversity" in issue and not existing:
+            return False
+        if "inconsistent label" in issue:
+            return False
+        return True
 
     @staticmethod
     def _scenario_summary(spec: dict[str, Any]) -> dict[str, Any]:

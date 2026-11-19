@@ -14,7 +14,7 @@ if str(SRC_DIR) not in sys.path:
 
 from synthetic_data.agents.client import GrokResponsesClient
 from synthetic_data.agents.adversary_agent import AdversaryAgent
-from synthetic_data.agents.ollama_client import OllamaClient
+from synthetic_data.agents.ollama_client import DEFAULT_OLLAMA_MODEL, OllamaClient
 from synthetic_data.agents.critic_agent import CriticAgent
 from synthetic_data.agents.planner_agent import PlannerAgent
 from synthetic_data.agents.scenario_agent import ScenarioAgent
@@ -40,7 +40,7 @@ def main() -> int:
     parser.add_argument("--max-attempts", type=int, default=3)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--provider", choices=("ollama", "grok"), default="ollama")
-    parser.add_argument("--model", help="Local Ollama model (default: qwen2.5:7b)")
+    parser.add_argument("--model", help=f"Local Ollama model (default: {DEFAULT_OLLAMA_MODEL})")
     parser.add_argument("--planner-model", help="Ollama model for planning (defaults to --model)")
     parser.add_argument("--scenario-model", help="Ollama model for scenario generation (defaults to --model)")
     parser.add_argument("--critic-model", help="Ollama model for critique (defaults to --model)")
@@ -50,7 +50,7 @@ def main() -> int:
 
     request = json.loads(args.request.read_text(encoding="utf-8"))
     if args.provider == "ollama":
-        default_model = args.model or "qwen2.5:7b"
+        default_model = args.model or DEFAULT_OLLAMA_MODEL
         role_models = {
             "planner": args.planner_model or default_model,
             "scenario": args.scenario_model or default_model,
@@ -93,7 +93,7 @@ def main() -> int:
     )
     report = result.report
     report["llm_provider"] = args.provider
-    report["llm_model"] = args.model or "qwen2.5:7b"
+    report["llm_model"] = args.model or DEFAULT_OLLAMA_MODEL
     report["llm_models_by_role"] = role_models
     report["sigma_rules_loaded"] = len(rules)
     report["sigma_rules_failed_to_load"] = failed_rules

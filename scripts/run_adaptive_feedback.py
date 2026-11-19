@@ -16,7 +16,7 @@ if str(SRC_DIR) not in sys.path:
 
 from synthetic_data.agents.adversary_agent import AdversaryAgent
 from synthetic_data.agents.client import GrokResponsesClient
-from synthetic_data.agents.ollama_client import OllamaClient
+from synthetic_data.agents.ollama_client import DEFAULT_OLLAMA_MODEL, OllamaClient
 from synthetic_data.agents.critic_agent import CriticAgent
 from synthetic_data.agents.planner_agent import PlannerAgent
 from synthetic_data.agents.scenario_agent import ScenarioAgent
@@ -42,7 +42,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--max-attempts", type=int, default=3)
     parser.add_argument("--provider", choices=("ollama", "grok"), default="ollama")
-    parser.add_argument("--model", help="Local Ollama model (default: qwen2.5:7b)")
+    parser.add_argument("--model", help=f"Local Ollama model (default: {DEFAULT_OLLAMA_MODEL})")
     parser.add_argument("--ollama-host", help="Ollama URL")
     parser.add_argument("--reference", type=Path)
     parser.add_argument(

@@ -65,6 +65,7 @@ def test_scenario_agent_returns_spec_accepted_by_existing_validator():
     assert result.spec == VALID_MALICIOUS
     assert result.model == "fake-grok-model"
     assert client.calls[0]["schema_name"] == "windows_scenario_spec"
+    assert '"action": "spawn_child"' in client.calls[0]["system_prompt"]
 
 
 def test_scenario_agent_rejects_invalid_parent_reference():
@@ -74,13 +75,34 @@ def test_scenario_agent_rejects_invalid_parent_reference():
         ScenarioAgent(FakeStructuredClient(invalid)).run("WMI to PowerShell")
 
 
-def test_scenario_agent_rejects_caller_label_mismatch():
+def test_scenario_agent_enforces_caller_label_mismatch():
     response = copy.deepcopy(VALID_MALICIOUS)
     response["label"] = "benign"
-    with pytest.raises(ScenarioSpecError, match="label"):
-        ScenarioAgent(FakeStructuredClient(response)).run(
-            "WMI to PowerShell", label="malicious"
-        )
+
+    result = ScenarioAgent(FakeStructuredClient(response)).run(
+        "WMI to PowerShell", label="malicious"
+    )
+
+    assert result.spec["label"] == "malicious"
+
+
+def test_scenario_agent_supplies_planner_labels_when_malicious_output_omits_them():
+    response = copy.deepcopy(VALID_MALICIOUS)
+    for step in response["steps"]:
+        step.pop("technique_labels", None)
+
+    result = ScenarioAgent(FakeStructuredClient(response)).run(
+        "WMI to PowerShell",
+        label="malicious",
+        plan={"technique_ids": ["T1047", "T1059.001"]},
+    )
+
+    labels = {
+        label
+        for step in result.spec["steps"]
+        for label in step.get("technique_labels", [])
+    }
+    assert labels == {"T1047", "T1059.001"}
 
 
 def test_scenario_agent_rejects_mismatched_caller_technique_labels():

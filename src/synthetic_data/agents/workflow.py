@@ -89,9 +89,7 @@ class GenerationWorkflow:
                 "technique_labels": (
                     (scenario_constraints or {}).get("technique_labels")
                     if (scenario_constraints or {}).get("technique_labels") is not None
-                    else plan.data.get("technique_ids", [])
-                    if plan.data.get("label") == "malicious"
-                    else []
+                    else [] if plan.data.get("label") == "benign" else None
                 ),
                 "plan": plan.data,
                 "feedback": feedback,

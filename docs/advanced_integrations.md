@@ -6,7 +6,7 @@ The executable workflow is `scripts/run_agent_workflow.py`. It calls a Planner A
 
 Evidence excerpts are passed as data with source paths. Text found inside evidence is never treated as model instructions. The workflow report labels dataset validation as `not_run`; critic acceptance is not a substitute for provenance, structural, domain, or model-utility validation.
 
-The workflow defaults to local Ollama (`qwen2.5:7b`) and needs no API key. Use `--provider grok` to select the hosted xAI client:
+The workflow defaults to local Ollama (`llama3.2:latest`) and needs no API key. Use `--provider grok` to select the hosted xAI client:
 
 ```powershell
 python scripts/run_agent_workflow.py "Simulate WMI starting PowerShell" --coverage-gap "WMI parent-child coverage"
