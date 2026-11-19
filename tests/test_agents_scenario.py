@@ -65,6 +65,7 @@ def test_scenario_agent_returns_spec_accepted_by_existing_validator():
     assert result.spec == VALID_MALICIOUS
     assert result.model == "fake-grok-model"
     assert client.calls[0]["schema_name"] == "windows_scenario_spec"
+    assert '"action": "spawn_child"' in client.calls[0]["system_prompt"]
 
 
 def test_scenario_agent_rejects_invalid_parent_reference():
