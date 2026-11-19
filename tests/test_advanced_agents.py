@@ -130,6 +130,29 @@ def test_critic_changes_accept_to_revise_for_high_severity_finding():
     assert not result.accepted
 
 
+def test_critic_ignores_generic_findings_contradicted_by_valid_draft():
+    generic_review = {
+        **VALID_REVIEW,
+        "decision": "revise",
+        "rubric_scores": {key: 1 for key in VALID_REVIEW["rubric_scores"]},
+        "findings": [
+            {"severity": "high", "issue": "Missing timestamp for the first step", "recommendation": "Add a timestamp."},
+            {"severity": "medium", "issue": "Lack of diversity in the scenario", "recommendation": "Add variety."},
+            {"severity": "high", "issue": "Missing parent-child relationship between the processes", "recommendation": "Add a parent."},
+        ],
+    }
+
+    result = CriticAgent(FakeClient(generic_review)).run(
+        VALID_SPEC,
+        request="Create a WMI child process scenario.",
+        plan=PLAN,
+        existing_scenarios=[],
+    )
+
+    assert result.accepted
+    assert result.findings == ()
+
+
 def test_critic_flags_near_duplicate_against_existing_scenarios():
     result = CriticAgent(FakeClient(VALID_REVIEW)).run(
         VALID_SPEC,

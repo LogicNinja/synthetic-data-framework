@@ -210,12 +210,18 @@ def main() -> None:
         with st.form("agent-workflow"):
             request = st.text_area(
                 "Scenario request",
-                value="Simulate WMI starting PowerShell with a benign look-alike.",
+                value=(
+                    "Create one malicious Windows telemetry scenario: WmiPrvSE.exe starts "
+                    "PowerShell as a child process. Use a realistic parent-child relationship, "
+                    "ISO-8601 UTC timestamps that advance in order, and ATT&CK labels only for "
+                    "the malicious behavior. Explain the benign administrative look-alike in the "
+                    "description, but keep the scenario label malicious. Do not add file actions."
+                ),
                 help="This produces a declarative scenario specification. It never executes actions on your computer.",
             )
             left, center, right = st.columns(3)
             coverage_gap = left.text_input("Coverage gap", value="WMI parent-child coverage")
-            hard_case = center.text_input("Hard case", value="Benign administrative look-alike")
+            hard_case = center.text_input("Hard case", value="Benign administrative look-alike in the description")
             model = right.text_input("Ollama model", value=DEFAULT_OLLAMA_MODEL)
             run_agents = st.form_submit_button("RUN AGENT WORKFLOW", disabled=not available, use_container_width=True)
 
